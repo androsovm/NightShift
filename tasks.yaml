@@ -1,0 +1,11 @@
+tasks:
+  - id: 1
+    title: "Refactor auth module"
+    status: pending
+    priority: high
+    context: "файл src/auth.py, устаревший подход"
+  - id: 2
+    title: "Add logging"
+    status: done
+    priority: low
+    context: "нужен structured logging"
