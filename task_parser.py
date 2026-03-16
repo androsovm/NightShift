@@ -1,5 +1,6 @@
 """Parser for NightShift task queue (tasks.yaml)."""
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -47,3 +48,32 @@ def save_tasks(tasks: list[dict], filepath: str = "tasks.yaml") -> None:
     """Save tasks back to a YAML file."""
     with open(filepath, "w") as f:
         yaml.dump({"tasks": tasks}, f, default_flow_style=False, allow_unicode=True)
+
+
+def schedule_tasks(tasks: list[dict], start_time: datetime) -> list[dict]:
+    """Schedule pending tasks into 30-minute slots sorted by priority."""
+    pending = filter_by_status(tasks, "pending")
+    pending.sort(key=lambda t: PRIORITY_ORDER.get(t.get("priority", "low"), 99))
+    schedule = []
+    current = start_time
+    for t in pending:
+        end = current + timedelta(minutes=30)
+        schedule.append({
+            "task_id": t["id"],
+            "title": t["title"],
+            "priority": t.get("priority", "low"),
+            "start_time": current,
+            "end_time": end,
+        })
+        current = end
+    return schedule
+
+
+def format_schedule(schedule: list[dict]) -> str:
+    """Format a schedule into a readable string."""
+    lines = []
+    for entry in schedule:
+        start = entry["start_time"].strftime("%H:%M")
+        end = entry["end_time"].strftime("%H:%M")
+        lines.append(f"[{start} - {end}] {entry['title']} ({entry['priority']})")
+    return "\n".join(lines)

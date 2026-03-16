@@ -2,11 +2,15 @@
 
 import os
 import tempfile
+from datetime import datetime
 
 import yaml
 import pytest
 
-from task_parser import load_tasks, filter_by_status, next_task, mark_done, save_tasks
+from task_parser import (
+    load_tasks, filter_by_status, next_task, mark_done, save_tasks,
+    schedule_tasks, format_schedule,
+)
 
 
 SAMPLE_TASKS = [
@@ -106,3 +110,77 @@ def test_roundtrip_mark_done(yaml_file):
     reloaded = load_tasks(yaml_file)
     t1 = next(t for t in reloaded if t["id"] == 1)
     assert t1["status"] == "done"
+
+
+# --- schedule_tasks tests ---
+
+class TestScheduleTasks:
+    def test_basic_scheduling(self):
+        start = datetime(2026, 3, 16, 22, 0)
+        schedule = schedule_tasks(SAMPLE_TASKS, start)
+        assert len(schedule) == 3  # 3 pending tasks
+        assert schedule[0]["task_id"] == 1  # high priority first
+        assert schedule[0]["start_time"] == datetime(2026, 3, 16, 22, 0)
+        assert schedule[0]["end_time"] == datetime(2026, 3, 16, 22, 30)
+        assert schedule[1]["start_time"] == datetime(2026, 3, 16, 22, 30)
+        assert schedule[2]["start_time"] == datetime(2026, 3, 16, 23, 0)
+
+    def test_priority_order(self):
+        start = datetime(2026, 3, 16, 22, 0)
+        schedule = schedule_tasks(SAMPLE_TASKS, start)
+        priorities = [e["priority"] for e in schedule]
+        assert priorities == ["high", "medium", "low"]
+
+    def test_empty_list(self):
+        start = datetime(2026, 3, 16, 22, 0)
+        assert schedule_tasks([], start) == []
+
+    def test_all_done(self):
+        tasks = [
+            {"id": 1, "title": "Done1", "status": "done", "priority": "high"},
+            {"id": 2, "title": "Done2", "status": "done", "priority": "low"},
+        ]
+        start = datetime(2026, 3, 16, 22, 0)
+        assert schedule_tasks(tasks, start) == []
+
+    def test_single_task(self):
+        tasks = [{"id": 5, "title": "Solo", "status": "pending", "priority": "medium"}]
+        start = datetime(2026, 3, 16, 23, 0)
+        schedule = schedule_tasks(tasks, start)
+        assert len(schedule) == 1
+        assert schedule[0]["task_id"] == 5
+        assert schedule[0]["end_time"] == datetime(2026, 3, 16, 23, 30)
+
+    def test_schedule_contains_required_fields(self):
+        tasks = [{"id": 1, "title": "T", "status": "pending", "priority": "low"}]
+        start = datetime(2026, 3, 16, 22, 0)
+        entry = schedule_tasks(tasks, start)[0]
+        assert set(entry.keys()) >= {"task_id", "title", "start_time", "end_time"}
+
+
+# --- format_schedule tests ---
+
+class TestFormatSchedule:
+    def test_basic_format(self):
+        start = datetime(2026, 3, 16, 22, 0)
+        schedule = schedule_tasks(SAMPLE_TASKS, start)
+        result = format_schedule(schedule)
+        lines = result.strip().split("\n")
+        assert len(lines) == 3
+        assert lines[0] == "[22:00 - 22:30] Task A (high)"
+        assert lines[1] == "[22:30 - 23:00] Task D (medium)"
+        assert lines[2] == "[23:00 - 23:30] Task C (low)"
+
+    def test_empty_schedule(self):
+        assert format_schedule([]) == ""
+
+    def test_midnight_crossing(self):
+        tasks = [
+            {"id": 1, "title": "Late", "status": "pending", "priority": "high"},
+            {"id": 2, "title": "After", "status": "pending", "priority": "low"},
+        ]
+        start = datetime(2026, 3, 16, 23, 45)
+        schedule = schedule_tasks(tasks, start)
+        result = format_schedule(schedule)
+        assert "[23:45 - 00:15] Late (high)" in result
+        assert "[00:15 - 00:45] After (low)" in result
