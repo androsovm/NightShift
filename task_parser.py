@@ -69,6 +69,45 @@ def schedule_tasks(tasks: list[dict], start_time: datetime) -> list[dict]:
     return schedule
 
 
+DEFAULT_MINUTES = {"high": 45, "medium": 30, "low": 15}
+
+
+def estimate_completion(
+    tasks: list[dict],
+    history: dict[int, int],
+    start_time: datetime,
+) -> dict:
+    """Estimate completion time for pending tasks based on history."""
+    # Build a map: task_id -> task for all tasks (including done) to look up priority
+    all_tasks_by_id = {t["id"]: t for t in tasks}
+
+    # Build priority -> list of actual minutes from history
+    priority_times: dict[str, list[int]] = {}
+    for task_id, minutes in history.items():
+        task = all_tasks_by_id.get(task_id)
+        if task:
+            pri = task.get("priority", "low")
+            priority_times.setdefault(pri, []).append(minutes)
+
+    pending = filter_by_status(tasks, "pending")
+    per_task = []
+    total = 0
+    for t in pending:
+        pri = t.get("priority", "low")
+        if pri in priority_times:
+            est = sum(priority_times[pri]) // len(priority_times[pri])
+        else:
+            est = DEFAULT_MINUTES.get(pri, 30)
+        per_task.append({"task_id": t["id"], "title": t["title"], "estimated_minutes": est})
+        total += est
+
+    return {
+        "total_minutes": total,
+        "estimated_finish": start_time + timedelta(minutes=total),
+        "per_task": per_task,
+    }
+
+
 def format_schedule(schedule: list[dict]) -> str:
     """Format a schedule into a readable string."""
     lines = []

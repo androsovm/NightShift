@@ -9,7 +9,7 @@ import pytest
 
 from task_parser import (
     load_tasks, filter_by_status, next_task, mark_done, save_tasks,
-    schedule_tasks, format_schedule,
+    schedule_tasks, format_schedule, estimate_completion,
 )
 
 
@@ -184,3 +184,19 @@ class TestFormatSchedule:
         result = format_schedule(schedule)
         assert "[23:45 - 00:15] Late (high)" in result
         assert "[00:15 - 00:45] After (low)" in result
+
+
+# --- estimate_completion tests ---
+
+def test_estimate_completion_basic():
+    tasks = [
+        {"id": 1, "title": "A", "status": "pending", "priority": "high"},
+        {"id": 2, "title": "B", "status": "pending", "priority": "low"},
+        {"id": 3, "title": "C", "status": "done", "priority": "high"},
+    ]
+    history = {3: 60, 10: 20}
+    start = datetime(2024, 1, 1, 22, 0)
+    result = estimate_completion(tasks, history, start)
+    assert result["total_minutes"] == 75  # task1: 60 (avg high from history), task2: 15 (default low)
+    assert result["estimated_finish"] == datetime(2024, 1, 1, 23, 15)
+    assert len(result["per_task"]) == 2
