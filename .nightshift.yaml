@@ -1,0 +1,38 @@
+sources:
+  - type: yaml
+
+limits:
+  max_tasks_per_run: 3
+  task_timeout_minutes: 30
+  max_files_changed: 15
+  max_lines_changed: 500
+
+tasks:
+  - id: add-py-typed
+    title: Add py.typed marker and improve type annotations
+    status: done
+    pr_url: https://github.com/androsovm/NightShift/pull/5
+
+  - id: add-storage-tests
+    title: Add unit tests for storage/store.py
+    intent: |
+      The file src/nightshift/storage/store.py has zero test coverage.
+      Write a comprehensive test file tests/test_storage/test_store.py that tests:
+      1. save_run() - saves RunResult as JSON, creates directory, verify file content
+      2. load_run() - loads by run_id, returns None for missing
+      3. load_latest_run() - returns most recent, returns None when empty
+      4. load_runs(limit) - returns N most recent sorted by time, respects limit
+      5. get_log_dir() - creates directory, returns correct path
+      Use tmp_path fixture to isolate from real ~/.nightshift/.
+      Patch RUNS_DIR and LOGS_DIR constants to point to tmp_path.
+      Create real RunResult objects, save them, and verify roundtrip.
+    scope:
+      - tests/test_storage/__init__.py
+      - tests/test_storage/test_store.py
+    priority: high
+    status: pending
+    constraints:
+      - Only create test files, do not modify any source code
+      - Use pytest fixtures and tmp_path
+      - Each test must have a clear assertion
+      - Must test edge cases like empty directories and missing files
