@@ -8,7 +8,6 @@ from unittest.mock import patch
 import yaml
 
 from nightshift.config.loader import (
-    GLOBAL_CONFIG_PATH,
     PROJECT_CONFIG_NAME,
     load_global_config,
     load_project_config,

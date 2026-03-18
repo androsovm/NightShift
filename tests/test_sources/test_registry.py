@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from nightshift.models.config import SourceConfig
-from nightshift.models.task import Task
 from nightshift.sources import (
     ADAPTERS,
     available_sources,
