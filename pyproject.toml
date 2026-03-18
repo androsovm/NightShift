@@ -1,0 +1,52 @@
+[project]
+name = "nightshift"
+version = "0.1.0"
+description = "Automated overnight task runner for Claude Code"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.13"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+    "typer>=0.15",
+    "rich>=13",
+    "questionary>=2",
+    "httpx>=0.28",
+    "pydantic>=2.10",
+    "pyyaml>=6",
+    "structlog>=24",
+    "python-slugify>=8",
+    "python-dotenv>=1",
+]
+
+[project.scripts]
+nightshift = "nightshift.__main__:main"
+
+# Third-party plugins register adapters via this entry point group.
+# Example in a plugin's pyproject.toml:
+#   [project.entry-points."nightshift.sources"]
+#   jira = "nightshift_jira:JiraSource"
+[project.entry-points."nightshift.sources"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nightshift"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+]
