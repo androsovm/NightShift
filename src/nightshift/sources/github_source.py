@@ -70,7 +70,7 @@ class GitHubSource:
 
     @staticmethod
     def _priority_from_labels(label_names: list[str]) -> TaskPriority:
-        lowered = {l.lower() for l in label_names}
+        lowered = {name.lower() for name in label_names}
         if "priority:high" in lowered or "P1" in label_names:
             return TaskPriority.HIGH
         if "priority:low" in lowered or "P3" in label_names:
@@ -115,7 +115,7 @@ class GitHubSource:
             if "pull_request" in issue:
                 continue
 
-            label_names = [l["name"] for l in issue.get("labels", [])]
+            label_names = [lbl["name"] for lbl in issue.get("labels", [])]
             task = Task(
                 id=slugify(f"gh-{issue['number']}-{issue['title']}"[:80]),
                 title=issue["title"],

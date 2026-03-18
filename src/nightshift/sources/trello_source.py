@@ -39,7 +39,7 @@ class TrelloSource:
 
     @staticmethod
     def _priority_from_labels(labels: list[dict]) -> TaskPriority:
-        names = {l.get("name", "").lower() for l in labels}
+        names = {lbl.get("name", "").lower() for lbl in labels}
         if "high" in names or "urgent" in names:
             return TaskPriority.HIGH
         if "low" in names:
@@ -67,7 +67,7 @@ class TrelloSource:
             if lst["name"].lower() == list_name.lower():
                 return lst["id"]
 
-        available = [l["name"] for l in lists]
+        available = [lst_item["name"] for lst_item in lists]
         raise RuntimeError(
             f"List '{list_name}' not found on board {board_id}. "
             f"Available lists: {available}"

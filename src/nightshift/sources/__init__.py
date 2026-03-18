@@ -15,7 +15,6 @@ protocol (i.e. implement ``fetch_tasks`` and ``mark_done`` async methods).
 from __future__ import annotations
 
 import sys
-from typing import Any
 
 import structlog
 

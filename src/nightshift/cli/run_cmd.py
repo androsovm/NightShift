@@ -20,7 +20,7 @@ def run(
     ),
 ) -> None:
     """Execute a NightShift run (collect tasks and process them)."""
-    from nightshift.config.loader import load_global_config, load_project_config
+    from nightshift.config.loader import load_global_config
     from nightshift.executor.runner import execute_run
     from nightshift.reporting.digest import format_summary
     from nightshift.storage.store import save_run

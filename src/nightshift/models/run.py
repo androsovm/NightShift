@@ -1,6 +1,6 @@
 """Run result models."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
@@ -23,6 +23,6 @@ class TaskResult(BaseModel):
 
 class RunResult(BaseModel):
     run_id: str  # YYYYMMDD-HHMMSS
-    started_at: datetime = Field(default_factory=datetime.now)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
     finished_at: datetime | None = None
     task_results: list[TaskResult] = Field(default_factory=list)

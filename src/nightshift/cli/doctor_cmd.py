@@ -172,7 +172,7 @@ def _check_config_files() -> list[tuple[str, bool, str]]:
         for pref in config.projects:
             cfg_path = pref.path / ".nightshift.yaml"
             if not cfg_path.exists():
-                results.append((f"  {pref.path.name}", False, f".nightshift.yaml not found"))
+                results.append((f"  {pref.path.name}", False, ".nightshift.yaml not found"))
                 continue
             try:
                 from nightshift.config.loader import load_project_config
