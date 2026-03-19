@@ -53,11 +53,16 @@ async def execute_run(
 
     If *project_path* is given only that project is processed; otherwise all
     projects listed in *global_config* are processed.
+
+    Respects ``global_config.schedule.max_duration_hours`` — stops accepting
+    new tasks once the wall-clock limit is reached.
     """
     run_id = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
     run_result = RunResult(run_id=run_id)
+    max_duration_seconds = global_config.schedule.max_duration_hours * 3600
+    run_start_time = time.monotonic()
 
-    log.info("run_start", run_id=run_id)
+    log.info("run_start", run_id=run_id, max_duration_hours=global_config.schedule.max_duration_hours)
 
     # Determine which projects to process.
     if project_path is not None:
@@ -70,7 +75,11 @@ async def execute_run(
         log.info("project_start", project=str(proj_path))
 
         try:
-            results = await _process_project(global_config, proj_path, run_id)
+            results = await _process_project(
+                global_config, proj_path, run_id,
+                run_start_time=run_start_time,
+                max_duration_seconds=max_duration_seconds,
+            )
             run_result.task_results.extend(results)
         except Exception:
             log.exception("project_error", project=str(proj_path))
@@ -95,6 +104,9 @@ async def _process_project(
     global_config: GlobalConfig,
     project_path: Path,
     run_id: str,
+    *,
+    run_start_time: float,
+    max_duration_seconds: float,
 ) -> list[TaskResult]:
     """Handle a single project: collect tasks, execute them, return results."""
     project_config: ProjectConfig = load_project_config(project_path)
@@ -132,7 +144,46 @@ async def _process_project(
 
     # 5. Execute each task
     results: list[TaskResult] = []
+    prs_created = 0
+
     for task in tasks:
+        # Check wall-clock limit
+        elapsed = time.monotonic() - run_start_time
+        if elapsed > max_duration_seconds:
+            log.warning(
+                "max_duration_reached",
+                elapsed_minutes=round(elapsed / 60, 1),
+                max_hours=global_config.schedule.max_duration_hours,
+                remaining_tasks=len(tasks) - len(results),
+            )
+            # Mark remaining tasks as skipped
+            for remaining in tasks[len(results):]:
+                results.append(TaskResult(
+                    task_id=remaining.id,
+                    task_title=remaining.title,
+                    project_path=str(project_path),
+                    status=TaskStatus.SKIPPED,
+                    error="max_duration_hours limit reached",
+                ))
+            break
+
+        # Check PR limit
+        if prs_created >= global_config.max_prs_per_night:
+            log.warning(
+                "max_prs_reached",
+                prs_created=prs_created,
+                limit=global_config.max_prs_per_night,
+            )
+            for remaining in tasks[len(results):]:
+                results.append(TaskResult(
+                    task_id=remaining.id,
+                    task_title=remaining.title,
+                    project_path=str(project_path),
+                    status=TaskStatus.SKIPPED,
+                    error="max_prs_per_night limit reached",
+                ))
+            break
+
         task_result = await _execute_task(
             task=task,
             project_path=project_path,
@@ -140,6 +191,9 @@ async def _process_project(
             run_id=run_id,
         )
         results.append(task_result)
+
+        if task_result.status == TaskStatus.PASSED and task_result.pr_url:
+            prs_created += 1
 
         # Return to main between tasks.
         try:

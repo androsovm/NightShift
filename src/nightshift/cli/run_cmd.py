@@ -56,6 +56,16 @@ def run(
         return
 
     # --- Live run ---
+    # Set up file logging for unattended runs
+    from datetime import datetime, timezone
+
+    from nightshift.logging import configure_logging
+    from nightshift.storage.store import get_log_dir
+
+    run_id = datetime.now(tz=timezone.utc).strftime("%Y%m%d-%H%M%S")
+    log_dir = get_log_dir(run_id)
+    configure_logging(log_file=log_dir / "run.log")
+
     console.print(Panel("[bold cyan]NightShift Run[/bold cyan]", expand=False))
 
     projects_to_run = (

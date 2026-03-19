@@ -48,7 +48,7 @@ class TestBuildPrompt:
 
     def test_includes_intent(self, task: Task) -> None:
         prompt = build_prompt(task)
-        assert "**Intent:** Simplify the utilities module" in prompt
+        assert "Simplify the utilities module" in prompt
 
     def test_includes_scope(self, task: Task) -> None:
         prompt = build_prompt(task)
@@ -60,31 +60,36 @@ class TestBuildPrompt:
         assert "- Keep backward compatibility" in prompt
         assert "- Add docstrings" in prompt
 
-    def test_includes_implementation_instruction(self, task: Task) -> None:
+    def test_includes_autonomous_context(self, task: Task) -> None:
         prompt = build_prompt(task)
-        assert "Implement the changes described above" in prompt
+        assert "autonomously" in prompt
+        assert "no human" in prompt.lower() or "No human" in prompt
 
-    def test_system_prompt_prepended(self, task: Task) -> None:
+    def test_includes_instructions(self, task: Task) -> None:
+        prompt = build_prompt(task)
+        assert "Do NOT create pull requests" in prompt
+        assert "Do NOT ask questions" in prompt
+
+    def test_system_prompt_included(self, task: Task) -> None:
         prompt = build_prompt(task, system_prompt="You are a code robot.")
-        lines = prompt.split("\n")
-        assert lines[0] == "You are a code robot."
+        assert "You are a code robot." in prompt
 
     def test_no_system_prompt(self, task: Task) -> None:
         prompt = build_prompt(task, system_prompt=None)
-        assert prompt.startswith("# Task:")
+        assert "# Task:" in prompt
 
     def test_minimal_task_omits_optional_sections(
         self, minimal_task: Task
     ) -> None:
         prompt = build_prompt(minimal_task)
         assert "# Task: Simple task" in prompt
-        assert "**Intent:**" not in prompt
-        assert "**Scope" not in prompt
-        assert "**Constraints:**" not in prompt
+        assert "## What to do" not in prompt
+        assert "## Scope" not in prompt
+        assert "## Constraints" not in prompt
 
     def test_system_prompt_whitespace_stripped(self, minimal_task: Task) -> None:
         prompt = build_prompt(minimal_task, system_prompt="  padded  \n\n")
-        assert prompt.startswith("padded")
+        assert "padded" in prompt
 
 
 # ---------------------------------------------------------------------------

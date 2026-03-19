@@ -14,6 +14,9 @@ from nightshift.models.config import ProjectLimits
 
 log = structlog.get_logger(__name__)
 
+_PYTEST_TIMEOUT = 300  # 5 minutes max for test suite
+_LINTER_TIMEOUT = 60   # 1 minute max for linter
+
 
 # ---------------------------------------------------------------------------
 # Individual gates
@@ -64,12 +67,18 @@ def run_baseline_tests(project_path: Path) -> tuple[bool, int, int]:
         log.warning("pytest_not_found")
         return True, 0, 0
 
-    result = subprocess.run(
-        ["pytest", "--tb=short", "-q"],
-        cwd=project_path,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["pytest", "--tb=short", "-q"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=_PYTEST_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        log.error("baseline_tests_timeout", timeout=_PYTEST_TIMEOUT)
+        return False, 0, 0
+
     passed, failed = _parse_pytest_summary(result.stdout)
     success = result.returncode == 0
     log.info("baseline_tests", success=success, passed=passed, failed=failed)
@@ -101,12 +110,17 @@ def run_linter(project_path: Path) -> tuple[bool, str]:
             cmd = args
 
         log.info("run_linter", linter=linter)
-        result = subprocess.run(
-            cmd,
-            cwd=project_path,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                timeout=_LINTER_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            log.error("linter_timeout", linter=linter, timeout=_LINTER_TIMEOUT)
+            return False, f"{linter} timed out after {_LINTER_TIMEOUT}s"
         output = (result.stdout + "\n" + result.stderr).strip()
         passed = result.returncode == 0
         if not passed:
@@ -131,12 +145,18 @@ def run_tests_vs_baseline(
 
     Returns ``(passed, message)``.
     """
-    result = subprocess.run(
-        ["pytest", "--tb=short", "-q"],
-        cwd=project_path,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["pytest", "--tb=short", "-q"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=_PYTEST_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        log.error("tests_vs_baseline_timeout", timeout=_PYTEST_TIMEOUT)
+        return False, f"pytest timed out after {_PYTEST_TIMEOUT}s"
+
     current_passed, current_failed = _parse_pytest_summary(result.stdout)
 
     regressions: list[str] = []

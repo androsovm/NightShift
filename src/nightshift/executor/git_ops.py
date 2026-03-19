@@ -14,6 +14,9 @@ log = structlog.get_logger(__name__)
 _GIT_BASE = ["git", "-c", "commit.gpgsign=false"]
 
 
+_GIT_TIMEOUT = 120  # seconds — prevent hanging on network issues
+_GH_TIMEOUT = 60
+
 def _run(
     args: list[str],
     cwd: Path,
@@ -23,6 +26,7 @@ def _run(
 ) -> subprocess.CompletedProcess[str]:
     """Run a subprocess command, logging it first."""
     cmd = _GIT_BASE + args if args[0] != "gh" else args
+    timeout = _GH_TIMEOUT if args[0] == "gh" else _GIT_TIMEOUT
     log.debug("git_ops.run", cmd=" ".join(cmd), cwd=str(cwd))
     return subprocess.run(
         cmd,
@@ -30,6 +34,7 @@ def _run(
         check=check,
         capture_output=capture,
         text=True,
+        timeout=timeout,
     )
 
 
@@ -39,11 +44,24 @@ def _run(
 
 
 def prepare_repo(project_path: Path) -> None:
-    """Fetch origin, checkout main, pull latest changes."""
+    """Fetch origin, checkout main, pull latest changes.
+
+    Network failures on fetch/pull are logged but do not abort — the run
+    continues with whatever local state is available.
+    """
     log.info("prepare_repo", project=str(project_path))
-    _run(["fetch", "origin"], cwd=project_path)
+    try:
+        _run(["fetch", "origin"], cwd=project_path)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        log.warning("prepare_repo.fetch_failed", error=str(exc))
+
+    # checkout main is mandatory — if this fails, the project is broken
     _run(["checkout", "main"], cwd=project_path)
-    _run(["pull", "--ff-only"], cwd=project_path)
+
+    try:
+        _run(["pull", "--ff-only"], cwd=project_path)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        log.warning("prepare_repo.pull_failed", error=str(exc))
 
 
 def create_branch(project_path: Path, slug: str) -> str:

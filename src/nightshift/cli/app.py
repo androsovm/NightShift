@@ -1,5 +1,6 @@
 """NightShift CLI application."""
 
+
 import typer
 
 from nightshift.cli.doctor_cmd import doctor
@@ -15,6 +16,17 @@ app = typer.Typer(
     no_args_is_help=True,
     rich_markup_mode="rich",
 )
+
+
+@app.callback()
+def main_callback(
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose logging output."),
+) -> None:
+    """Configure logging before any command runs."""
+    from nightshift.logging import configure_logging
+
+    configure_logging(verbose=verbose)
+
 
 app.command()(init)
 app.command()(run)
