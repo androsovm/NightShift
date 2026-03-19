@@ -8,31 +8,293 @@ limits:
   max_lines_changed: 500
 
 tasks:
+  # ── Done ──────────────────────────────────────────────────
   - id: add-py-typed
-    title: Add py.typed marker and improve type annotations
+    title: Add py.typed marker
     status: done
     pr_url: https://github.com/androsovm/NightShift/pull/5
 
   - id: add-storage-tests
     title: Add unit tests for storage/store.py
+    status: done
+    pr_url: https://github.com/androsovm/NightShift/pull/6
+
+  # ── Night 1: Bugs ────────────────────────────────────────
+  - id: fix-store-corruption-handling
+    title: Handle corrupted JSON in storage module
     intent: |
-      The file src/nightshift/storage/store.py has zero test coverage.
-      Write a comprehensive test file tests/test_storage/test_store.py that tests:
-      1. save_run() - saves RunResult as JSON, creates directory, verify file content
-      2. load_run() - loads by run_id, returns None for missing
-      3. load_latest_run() - returns most recent, returns None when empty
-      4. load_runs(limit) - returns N most recent sorted by time, respects limit
-      5. get_log_dir() - creates directory, returns correct path
-      Use tmp_path fixture to isolate from real ~/.nightshift/.
-      Patch RUNS_DIR and LOGS_DIR constants to point to tmp_path.
-      Create real RunResult objects, save them, and verify roundtrip.
+      storage/store.py functions load_run(), load_latest_run(), and load_runs()
+      call RunResult.model_validate_json() without try/except. If a JSON file is
+      corrupted or has schema changes, commands like `nightshift log` and
+      `nightshift status` crash with ValidationError or JSONDecodeError.
+
+      Fix all three functions:
+      - load_run(): wrap in try/except, return None on error, log warning
+      - load_latest_run(): skip corrupted files, try next most recent
+      - load_runs(): skip corrupted files, log warning, continue loading others
+
+      Add tests in tests/test_storage/test_store.py:
+      - test_load_run_corrupted_json: write invalid JSON, verify returns None
+      - test_load_latest_run_skips_corrupted: write 2 files (1 good, 1 bad), verify returns good one
+      - test_load_runs_skips_corrupted: write 3 files (2 good, 1 bad), verify returns 2
     scope:
-      - tests/test_storage/__init__.py
+      - src/nightshift/storage/store.py
       - tests/test_storage/test_store.py
     priority: high
     status: pending
     constraints:
-      - Only create test files, do not modify any source code
-      - Use pytest fixtures and tmp_path
-      - Each test must have a clear assertion
-      - Must test edge cases like empty directories and missing files
+      - Use structlog for warning messages
+      - Do not change function signatures
+      - Do not create new files, only modify existing ones
+      - tests/test_storage/test_store.py already exists — add new test classes to it
+
+  - id: fix-max-prs-enforcement
+    title: Enforce max_prs_per_night limit in runner
+    intent: |
+      GlobalConfig.max_prs_per_night is defined but never enforced.
+      The runner can create unlimited PRs in a single run.
+
+      In executor/runner.py, add a counter that tracks total PRs created
+      across all projects. Before calling push_branch/create_pr, check
+      if the limit is reached. If so, skip remaining tasks with status "skipped"
+      and log a warning.
+
+      Add tests in tests/test_executor/test_runner.py (create this file):
+      - test_max_prs_limit_stops_execution: mock all git/claude operations,
+        set max_prs_per_night=1, run with 3 tasks, verify only 1 gets PR,
+        others get status "skipped"
+      - test_max_prs_default_allows_ten: verify default limit is 10
+    scope:
+      - src/nightshift/executor/runner.py
+      - tests/test_executor/test_runner.py
+    priority: high
+    status: pending
+    constraints:
+      - Do not change function signatures of execute_run()
+      - Pass the limit via global_config which is already available
+      - Skipped tasks should have error="max_prs_per_night limit reached"
+      - Use unittest.mock to mock git_ops and claude functions in tests
+
+  - id: fix-asyncio-run-in-loop
+    title: Fix unsafe asyncio.run() calls in dry-run
+    intent: |
+      cli/run_cmd.py _dry_run() calls asyncio.run() inside a for loop
+      (once per source adapter). This creates and destroys event loops
+      repeatedly, which is inefficient and can cause issues.
+
+      Refactor _dry_run() to collect all async work and run it in a single
+      asyncio.run() call. Create an async helper function that does the
+      source fetching loop, then call asyncio.run() once on it.
+
+      Also fix the live run path — it also calls asyncio.run(execute_run(...))
+      which is fine (single call), but wrap it in a try/except for
+      RuntimeError("This event loop is already running") with a fallback
+      using asyncio.get_event_loop().run_until_complete() for environments
+      where a loop is already active (e.g., Jupyter).
+    scope:
+      - src/nightshift/cli/run_cmd.py
+    priority: medium
+    status: pending
+    constraints:
+      - Do not change the user-facing behavior
+      - Do not change function signatures
+      - Keep the code simple — no need for complex async patterns
+
+  # ── Night 2: Error handling ──────────────────────────────
+  - id: add-retry-logic-claude
+    title: Add retry with backoff for Claude API errors
+    intent: |
+      executor/claude.py invoke_claude() has no retry logic. If Claude API
+      returns a transient error (HTTP 529 Overloaded, connection timeout),
+      the task immediately fails.
+
+      Add retry logic to invoke_claude():
+      - Retry up to 3 times on subprocess non-zero exit
+      - Read the log output; if it contains "529", "overloaded", "rate limit",
+        or "connection" (case-insensitive), treat as retryable
+      - Wait 30 seconds between retries (use time.sleep)
+      - Log each retry attempt with structlog
+      - If all retries fail, return the last error
+
+      Do NOT add any new dependencies. Use only stdlib time.sleep.
+
+      Add tests in tests/test_executor/test_claude.py:
+      - test_retry_on_overloaded: mock subprocess to fail twice with "529 overloaded"
+        then succeed on 3rd try, verify success=True
+      - test_no_retry_on_normal_failure: mock subprocess to fail with normal error,
+        verify only 1 attempt
+      - test_all_retries_exhausted: mock subprocess to fail 3 times with "overloaded",
+        verify success=False
+    scope:
+      - src/nightshift/executor/claude.py
+      - tests/test_executor/test_claude.py
+    priority: high
+    status: pending
+    constraints:
+      - Do not change the function signature of invoke_claude()
+      - Do not add new dependencies
+      - tests/test_executor/test_claude.py already exists — add new test classes
+      - Max 3 retries, 30 second delay between retries
+
+  - id: add-git-network-resilience
+    title: Add error handling for git network failures
+    intent: |
+      executor/git_ops.py prepare_repo() calls fetch/checkout/pull with no
+      error handling. Network failures crash the entire project processing.
+
+      Make prepare_repo() resilient:
+      - Wrap git fetch in try/except CalledProcessError
+      - If fetch fails, log warning and continue (work with local state)
+      - If checkout main fails, raise (this is fatal)
+      - If pull fails, log warning and continue (may be offline)
+
+      Add tests in tests/test_executor/test_git_ops.py:
+      - test_prepare_repo_fetch_failure_continues: mock fetch to raise
+        CalledProcessError, verify checkout and pull still called
+      - test_prepare_repo_pull_failure_continues: mock pull to raise,
+        verify no exception propagated
+      - test_prepare_repo_checkout_failure_raises: mock checkout to raise,
+        verify exception propagated
+    scope:
+      - src/nightshift/executor/git_ops.py
+      - tests/test_executor/test_git_ops.py
+    priority: medium
+    status: pending
+    constraints:
+      - Do not change the function signature of prepare_repo()
+      - tests/test_executor/test_git_ops.py already exists — add new test classes
+      - Use structlog for warning messages
+
+  # ── Night 3: Quality & config ────────────────────────────
+  - id: add-structlog-config
+    title: Configure structlog with proper formatting
+    intent: |
+      All modules use structlog.get_logger() but there is no structlog.configure()
+      call anywhere. Logs output in default format with no control.
+
+      Create src/nightshift/logging.py with a configure_logging() function:
+      - Accept a `verbose: bool` parameter
+      - If verbose: use structlog ConsoleRenderer with colors (dev-friendly)
+      - If not verbose: use structlog JSONRenderer (machine-readable)
+      - Set log level: DEBUG if verbose, INFO otherwise
+      - Add timestamper and log level processors
+
+      Call configure_logging() in cli/app.py as a Typer callback:
+      - Add --verbose / -v flag to the main app
+      - Call configure_logging(verbose=verbose) in the callback
+
+      Add tests in tests/test_logging.py:
+      - test_configure_verbose: call configure_logging(True), verify no errors
+      - test_configure_json: call configure_logging(False), verify no errors
+    scope:
+      - src/nightshift/logging.py
+      - src/nightshift/cli/app.py
+      - tests/test_logging.py
+    priority: medium
+    status: pending
+    constraints:
+      - Do not modify any other files
+      - Do not add new dependencies (structlog is already installed)
+      - Keep the configuration simple
+
+  - id: scope-linter-to-changed-files
+    title: Run linter only on changed files instead of entire project
+    intent: |
+      quality_gates.py run_linter() runs `ruff check .` on the entire project.
+      If tests/ or unrelated files have lint issues, the quality gate fails
+      even though the task's changes are clean.
+
+      Change run_linter() to only lint files that changed vs main:
+      1. Get list of changed files using `git diff --name-only main...HEAD`
+      2. Filter to only .py files
+      3. If no .py files changed, return (True, "No Python files changed")
+      4. Run `ruff check <file1> <file2> ...` on only changed files
+      5. Same for flake8 if ruff not available
+
+      Add tests in tests/test_executor/test_quality_gates.py:
+      - test_linter_only_checks_changed_files: mock git diff to return 2 files,
+        verify ruff is called with those specific files
+      - test_linter_skips_when_no_py_files: mock git diff to return only .md files,
+        verify linter returns True with skip message
+    scope:
+      - src/nightshift/executor/quality_gates.py
+      - tests/test_executor/test_quality_gates.py
+    priority: medium
+    status: pending
+    constraints:
+      - Do not change the function signature of run_linter()
+      - Add a project_path parameter usage for git diff
+      - tests/test_executor/test_quality_gates.py already exists — add new test classes
+
+  # ── Night 4: Tests ───────────────────────────────────────
+  - id: add-digest-tests
+    title: Add unit tests for reporting/digest.py
+    intent: |
+      reporting/digest.py has 165 lines and zero test coverage. It formats
+      run results using Rich Console, Tables, and Panels.
+
+      Create tests/test_reporting/__init__.py and tests/test_reporting/test_digest.py.
+
+      Test all three public functions by capturing Rich console output:
+      Use `console = Console(file=StringIO())` and pass it to the functions,
+      OR mock the module-level console, OR just verify no exceptions are raised
+      with various inputs.
+
+      Tests to write:
+      - test_format_digest_with_results: pass sample_run_result fixture, verify no crash
+      - test_format_digest_empty_results: pass RunResult with empty task_results
+      - test_format_summary_passed: pass result with 1 passed task
+      - test_format_summary_failed: pass result with 1 failed task
+      - test_format_summary_mixed: pass result with both passed and failed
+      - test_format_task_detail_passed: pass TaskResult with status=passed
+      - test_format_task_detail_failed: pass TaskResult with error message
+      - test_format_task_detail_with_log_file: pass TaskResult with log_file path
+      - test_format_duration_seconds: verify _format_duration(30) returns "30.0s"
+      - test_format_duration_minutes: verify _format_duration(150) returns "2m 30s"
+      - test_format_duration_hours: verify _format_duration(7200) returns "2h 0m"
+    scope:
+      - tests/test_reporting/__init__.py
+      - tests/test_reporting/test_digest.py
+    priority: medium
+    status: pending
+    constraints:
+      - Only create test files, do not modify source code
+      - Use conftest.py sample_run_result fixture where possible
+      - Import _format_duration directly for unit testing
+      - Create RunResult/TaskResult objects inline where needed for specific test cases
+
+  - id: add-github-source-tests
+    title: Add unit tests for GitHub source adapter
+    intent: |
+      sources/github_source.py has zero test coverage. It fetches tasks from
+      GitHub Issues API and closes them on completion.
+
+      Create tests/test_sources/test_github_source.py with mocked httpx responses.
+
+      Tests to write:
+      - test_fetch_tasks_returns_issues: mock GET /repos/owner/repo/issues
+        to return 2 issues, verify 2 Task objects returned with correct fields
+      - test_fetch_tasks_skips_pull_requests: mock response with 1 issue + 1 PR
+        (has "pull_request" key), verify only 1 Task returned
+      - test_fetch_tasks_priority_from_labels: mock issue with "priority:high" label,
+        verify task.priority == "high"
+      - test_fetch_tasks_missing_token_raises: patch get_secret to return None,
+        verify RuntimeError raised
+      - test_mark_done_closes_issue: mock POST comment + PATCH close,
+        verify both API calls made
+      - test_detect_repo_from_ssh: mock subprocess to return
+        "git@github.com:owner/repo.git", verify returns "owner/repo"
+      - test_detect_repo_from_https: mock subprocess to return
+        "https://github.com/owner/repo.git", verify returns "owner/repo"
+
+      Use unittest.mock.patch for get_secret and httpx.AsyncClient.
+      Use pytest-asyncio for async tests.
+    scope:
+      - tests/test_sources/test_github_source.py
+    priority: medium
+    status: pending
+    constraints:
+      - Only create test files, do not modify source code
+      - Mock all HTTP calls — never hit real GitHub API
+      - Mock get_secret to return "fake-token"
+      - Use unittest.mock.AsyncMock for httpx async methods
