@@ -298,3 +298,41 @@ tasks:
       - Mock all HTTP calls — never hit real GitHub API
       - Mock get_secret to return "fake-token"
       - Use unittest.mock.AsyncMock for httpx async methods
+
+  # ── Night 5: UX ─────────────────────────────────────────
+  - id: add-sleep-prevention-hint
+    title: Add macOS/Linux sleep prevention guidance to install and doctor
+    intent: |
+      When NightShift runs overnight via launchd/systemd, the machine must
+      not sleep — otherwise the scheduler never fires. Users often miss this.
+
+      Changes needed:
+
+      1. cli/install_cmd.py — after successful install, print a warning panel:
+         - macOS: "Important: Your Mac must not sleep for NightShift to run.
+           Go to System Settings → Energy → Options → enable 'Prevent automatic
+           sleeping when the display is off'. Or run: sudo pmset -c disablesleep 1"
+         - Linux: "Important: Ensure your machine does not suspend overnight.
+           Check your power management settings or run: systemctl mask sleep.target suspend.target"
+
+      2. cli/doctor_cmd.py — add a new check that detects sleep settings:
+         - macOS: run `pmset -g | grep sleep` and check if disablesleep is 1
+           or if sleep timer is 0. If the machine will sleep, show WARN with
+           the fix instructions.
+         - Linux: check if sleep.target is masked via
+           `systemctl is-enabled sleep.target`. If active, show WARN.
+         - Add the check to the doctor table as "Sleep prevention"
+
+      3. README.md — add a "Prerequisites" note about sleep prevention in the
+         Scheduling section, after the `nightshift install` description.
+    scope:
+      - src/nightshift/cli/install_cmd.py
+      - src/nightshift/cli/doctor_cmd.py
+      - README.md
+    priority: high
+    status: pending
+    constraints:
+      - Use Rich Panel with yellow border for the warning in install_cmd
+      - Doctor check should be WARN not FAIL (not a hard blocker)
+      - Keep platform detection via platform.system()
+      - Do not run sudo commands in doctor — only read/check settings
