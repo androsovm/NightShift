@@ -90,7 +90,7 @@ def _generate_plist(time: str, timezone: str) -> str:
                 <key>TZ</key>
                 <string>{timezone}</string>
                 <key>PATH</key>
-                <string>/usr/local/bin:/usr/bin:/bin:{Path(sys.executable).parent}</string>
+                <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{Path(sys.executable).parent}</string>
             </dict>
 
             <key>RunAtLoad</key>
@@ -111,7 +111,7 @@ def _generate_service() -> str:
         [Service]
         Type=oneshot
         ExecStart={nightshift_bin} run
-        Environment=PATH=/usr/local/bin:/usr/bin:/bin:{Path(sys.executable).parent}
+        Environment=PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:{Path(sys.executable).parent}
 
         [Install]
         WantedBy=default.target""")
