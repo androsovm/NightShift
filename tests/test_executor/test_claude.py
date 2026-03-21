@@ -190,3 +190,72 @@ class TestInvokeClaude:
         assert success is True
         assert "out" in output
         assert "warn" in output
+
+
+# ---------------------------------------------------------------------------
+# Retry logic
+# ---------------------------------------------------------------------------
+
+
+class TestRetryOnOverloaded:
+    @patch("nightshift.executor.claude.time.sleep")
+    @patch("nightshift.executor.claude.subprocess.run")
+    def test_retry_on_overloaded(
+        self, mock_run: MagicMock, mock_sleep: MagicMock, tmp_path: Path
+    ) -> None:
+        """Fail twice with 529 overloaded, succeed on 3rd attempt."""
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="", stderr="529 overloaded"
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=1, stdout="", stderr="529 overloaded"
+            ),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="Success!", stderr=""
+            ),
+        ]
+        log_file = tmp_path / "run.log"
+        success, output = invoke_claude(tmp_path, "prompt", 10, log_file)
+
+        assert success is True
+        assert "Success!" in output
+        assert mock_run.call_count == 3
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_called_with(30)
+
+
+class TestNoRetryOnNormalFailure:
+    @patch("nightshift.executor.claude.time.sleep")
+    @patch("nightshift.executor.claude.subprocess.run")
+    def test_no_retry_on_normal_failure(
+        self, mock_run: MagicMock, mock_sleep: MagicMock, tmp_path: Path
+    ) -> None:
+        """Normal (non-retryable) errors should not be retried."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="syntax error in prompt"
+        )
+        log_file = tmp_path / "run.log"
+        success, output = invoke_claude(tmp_path, "prompt", 10, log_file)
+
+        assert success is False
+        assert mock_run.call_count == 1
+        mock_sleep.assert_not_called()
+
+
+class TestAllRetriesExhausted:
+    @patch("nightshift.executor.claude.time.sleep")
+    @patch("nightshift.executor.claude.subprocess.run")
+    def test_all_retries_exhausted(
+        self, mock_run: MagicMock, mock_sleep: MagicMock, tmp_path: Path
+    ) -> None:
+        """All 3 attempts fail with overloaded — should return failure."""
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="overloaded"
+        )
+        log_file = tmp_path / "run.log"
+        success, output = invoke_claude(tmp_path, "prompt", 10, log_file)
+
+        assert success is False
+        assert mock_run.call_count == 3
+        assert mock_sleep.call_count == 2
