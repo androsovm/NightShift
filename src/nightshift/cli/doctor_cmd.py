@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import subprocess
 from pathlib import Path
 
@@ -148,6 +149,78 @@ def _check_api_tokens() -> list[tuple[str, bool, str]]:
     return results
 
 
+def _check_sleep_prevention() -> tuple[bool, str]:
+    """Check if the machine is configured to stay awake overnight."""
+    system = platform.system()
+
+    if system == "Darwin":
+        try:
+            result = subprocess.run(
+                ["pmset", "-g"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return False, "could not read pmset settings"
+
+            output = result.stdout
+            # Check for disablesleep first
+            for line in output.splitlines():
+                if "disablesleep" in line.lower():
+                    value = line.strip().split()[-1]
+                    if value == "1":
+                        return True, "disablesleep is enabled"
+
+            # Check sleep timer value
+            for line in output.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("sleep") and "displaysleep" not in stripped.lower():
+                    parts = stripped.split()
+                    if len(parts) >= 2:
+                        try:
+                            sleep_val = int(parts[-1])
+                            if sleep_val == 0:
+                                return True, "sleep timer disabled (set to 0)"
+                            return (
+                                False,
+                                f"machine may sleep after {sleep_val} min — "
+                                "run: sudo pmset -c disablesleep 1",
+                            )
+                        except ValueError:
+                            pass
+
+            return False, "could not determine sleep setting — check System Settings → Energy"
+        except FileNotFoundError:
+            return False, "pmset not found"
+        except Exception as exc:
+            return False, str(exc)
+
+    elif system == "Linux":
+        try:
+            result = subprocess.run(
+                ["systemctl", "is-enabled", "sleep.target"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            status = result.stdout.strip()
+            if status in ("masked", "masked-runtime"):
+                return True, "sleep.target is masked"
+            return (
+                False,
+                f"sleep.target is {status or 'active'} — "
+                "run: systemctl mask sleep.target suspend.target",
+            )
+        except FileNotFoundError:
+            return True, "systemctl not found (non-systemd system)"
+        except Exception as exc:
+            return False, str(exc)
+
+    else:
+        return True, f"sleep check not applicable on {system}"
+
+
 def _check_config_files() -> list[tuple[str, bool, str]]:
     """Check that config files exist and parse correctly."""
     results: list[tuple[str, bool, str]] = []
@@ -250,6 +323,13 @@ def doctor() -> None:
         table.add_row(name, status, detail)
         if not ok:
             issues += 1
+
+    # --- Sleep prevention ---
+    ok, detail = _check_sleep_prevention()
+    status = "[green]OK[/green]" if ok else "[yellow]WARN[/yellow]"
+    table.add_row("Sleep prevention", status, detail)
+    if not ok:
+        issues += 1
 
     console.print(table)
 
