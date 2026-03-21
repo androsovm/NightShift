@@ -168,18 +168,20 @@ def _check_sleep_prevention() -> tuple[bool, str]:
             # Check for disablesleep first
             for line in output.splitlines():
                 if "disablesleep" in line.lower():
-                    value = line.strip().split()[-1]
-                    if value == "1":
+                    parts = line.strip().split()
+                    if len(parts) >= 2 and parts[1] == "1":
                         return True, "disablesleep is enabled"
 
             # Check sleep timer value
+            # pmset format: "  sleep          1 (sleep prevented by ...)"
+            # parts[0] = key, parts[1] = value, rest is optional comment
             for line in output.splitlines():
                 stripped = line.strip()
                 if stripped.startswith("sleep") and "displaysleep" not in stripped.lower():
                     parts = stripped.split()
                     if len(parts) >= 2:
                         try:
-                            sleep_val = int(parts[-1])
+                            sleep_val = int(parts[1])
                             if sleep_val == 0:
                                 return True, "sleep timer disabled (set to 0)"
                             return (
@@ -198,22 +200,27 @@ def _check_sleep_prevention() -> tuple[bool, str]:
 
     elif system == "Linux":
         try:
-            result = subprocess.run(
-                ["systemctl", "is-enabled", "sleep.target"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            status = result.stdout.strip()
-            if status in ("masked", "masked-runtime"):
-                return True, "sleep.target is masked"
+            targets_to_check = ["sleep.target", "suspend.target"]
+            unmasked: list[str] = []
+            for target in targets_to_check:
+                result = subprocess.run(
+                    ["systemctl", "is-enabled", target],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                status = result.stdout.strip()
+                if status not in ("masked", "masked-runtime"):
+                    unmasked.append(f"{target} ({status or 'active'})")
+            if not unmasked:
+                return True, "sleep.target and suspend.target are masked"
             return (
                 False,
-                f"sleep.target is {status or 'active'} — "
+                f"{', '.join(unmasked)} not masked — "
                 "run: systemctl mask sleep.target suspend.target",
             )
         except FileNotFoundError:
-            return True, "systemctl not found (non-systemd system)"
+            return False, "systemctl not found — cannot verify sleep prevention"
         except Exception as exc:
             return False, str(exc)
 
