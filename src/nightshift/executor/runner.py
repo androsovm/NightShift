@@ -70,6 +70,8 @@ async def execute_run(
     else:
         project_paths = [ref.path for ref in global_config.projects]
 
+    prs_created = 0
+
     for proj_path in project_paths:
         proj_path = proj_path.resolve()
         log.info("project_start", project=str(proj_path))
@@ -79,8 +81,13 @@ async def execute_run(
                 global_config, proj_path, run_id,
                 run_start_time=run_start_time,
                 max_duration_seconds=max_duration_seconds,
+                prs_created=prs_created,
             )
             run_result.task_results.extend(results)
+            prs_created += sum(
+                1 for r in results
+                if r.status == TaskStatus.PASSED and r.pr_url
+            )
         except Exception:
             log.exception("project_error", project=str(proj_path))
 
@@ -107,6 +114,7 @@ async def _process_project(
     *,
     run_start_time: float,
     max_duration_seconds: float,
+    prs_created: int = 0,
 ) -> list[TaskResult]:
     """Handle a single project: collect tasks, execute them, return results."""
     project_config: ProjectConfig = load_project_config(project_path)
@@ -144,7 +152,6 @@ async def _process_project(
 
     # 5. Execute each task
     results: list[TaskResult] = []
-    prs_created = 0
 
     for task in tasks:
         # Check wall-clock limit
