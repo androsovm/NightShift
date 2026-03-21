@@ -16,19 +16,18 @@ from nightshift.models.config import (
     ScheduleConfig,
     SourceConfig,
 )
-from nightshift.models.task import Task, TaskPriority, TaskStatus
+from nightshift.models.task import QueuedTask, TaskPriority, TaskStatus
+from nightshift.storage import task_queue
 
 
-def _make_task(task_id: str, title: str) -> Task:
-    return Task(
+def _make_queued_task(task_id: str, title: str, project_path: str) -> QueuedTask:
+    return QueuedTask(
         id=task_id,
         title=title,
         source_type="yaml",
-        project_path="/tmp/test",
+        project_path=project_path,
         priority=TaskPriority.MEDIUM,
         intent=f"Do {title}",
-        scope=[],
-        constraints=[],
     )
 
 
@@ -41,10 +40,15 @@ def _make_global_config(tmp_path: Path, *, max_prs: int = 10) -> GlobalConfig:
 
 
 @pytest.mark.asyncio
-async def test_max_prs_limit_stops_execution(tmp_path: Path) -> None:
+async def test_max_prs_limit_stops_execution(tmp_path: Path, monkeypatch) -> None:
     """With max_prs_per_night=1, only the first task should get a PR; the rest are skipped."""
+    # Set up local queue with 3 tasks
+    monkeypatch.setattr(task_queue, "TASKS_FILE", tmp_path / "tasks.yaml")
+    proj = str(tmp_path)
+    for i in range(3):
+        task_queue.add_task(_make_queued_task(f"task-{i}", f"Task {i}", proj))
+
     global_config = _make_global_config(tmp_path, max_prs=1)
-    tasks = [_make_task(f"task-{i}", f"Task {i}") for i in range(3)]
 
     project_config = ProjectConfig(
         sources=[SourceConfig(type="yaml")],
@@ -54,9 +58,6 @@ async def test_max_prs_limit_stops_execution(tmp_path: Path) -> None:
     with (
         patch("nightshift.executor.runner.load_project_config", return_value=project_config),
         patch("nightshift.executor.runner.prepare_repo"),
-        patch("nightshift.executor.runner.ADAPTERS", {"yaml": MagicMock(
-            return_value=MagicMock(fetch_tasks=AsyncMock(return_value=tasks), mark_done=AsyncMock()),
-        )}),
         patch("nightshift.executor.runner.create_branch", return_value="nightshift/task-0"),
         patch("nightshift.executor.runner.run_baseline_tests", return_value=(True, 5, 0)),
         patch("nightshift.executor.runner.build_prompt", return_value="prompt"),

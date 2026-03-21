@@ -8,20 +8,27 @@ from nightshift.models.config import (
     SourceType,
 )
 from nightshift.models.run import RunResult, TaskResult
-from nightshift.models.task import Task, TaskPriority, TaskStatus
+from nightshift.models.task import (
+    QueuedTask,
+    Task,
+    TaskAttempt,
+    TaskPriority,
+    TaskStatus,
+)
 
 __all__ = [
     "GlobalConfig",
     "ProjectConfig",
     "ProjectLimits",
     "ProjectRef",
+    "QueuedTask",
     "RunResult",
     "ScheduleConfig",
     "SourceConfig",
     "SourceType",
     "Task",
+    "TaskAttempt",
     "TaskPriority",
-    "TaskResult",
     "TaskResult",
     "TaskStatus",
 ]

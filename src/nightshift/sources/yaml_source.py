@@ -73,7 +73,7 @@ class YAMLSource:
                 id=task_id,
                 title=entry.get("title", task_id),
                 source_type="yaml",
-                source_ref=str(cfg_path),
+                source_ref=f"{cfg_path}#{task_id}",
                 project_path=project_path,
                 priority=priority,
                 intent=entry.get("intent"),

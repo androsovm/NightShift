@@ -109,52 +109,37 @@ def run(
 
 
 def _dry_run(global_config, project_path: Path | None) -> None:
-    """Collect tasks and display plan without executing."""
+    """Show tasks from the local queue that would be executed."""
     from nightshift.config.loader import load_project_config
+    from nightshift.storage.task_queue import get_pending_tasks
 
     console.print(Panel("[bold yellow]DRY RUN[/bold yellow] -- no changes will be made", expand=False))
 
-    projects_to_run = (
-        [p for p in global_config.projects if p.path == project_path]
-        if project_path
-        else global_config.projects
-    )
+    project_filter = str(project_path.resolve()) if project_path else None
+    pending = get_pending_tasks(project_path=project_filter)
 
-    if not projects_to_run:
-        console.print("[yellow]No projects configured.[/yellow]")
+    if not pending:
+        console.print("[dim]No pending tasks in queue.[/dim]")
+        console.print("[dim]Run 'nightshift sync' to import from sources, or 'nightshift tasks add' to create one.[/dim]")
         return
 
+    # Group by project
+    projects: dict[str, list] = {}
+    for qt in pending:
+        projects.setdefault(qt.project_path, []).append(qt)
+
     total_tasks = 0
-    for pref in projects_to_run:
-        console.print(f"\n[bold cyan]{pref.path.name}[/bold cyan] ({pref.path})")
+    for proj_path_str, tasks in projects.items():
+        proj_path = Path(proj_path_str)
+        console.print(f"\n[bold cyan]{proj_path.name}[/bold cyan] ({proj_path})")
 
         try:
-            project_config = load_project_config(pref.path)
+            project_config = load_project_config(proj_path)
         except Exception as exc:
             console.print(f"  [red]Could not load project config: {exc}[/red]")
             continue
 
-        # Collect tasks from each source
-        import asyncio
-
-        from nightshift.sources import ADAPTERS
-
-        tasks = []
-        for source_cfg in project_config.sources:
-            adapter_cls = ADAPTERS.get(str(source_cfg.type))
-            if adapter_cls is None:
-                console.print(f"  [yellow]Unknown source type: {source_cfg.type}[/yellow]")
-                continue
-            try:
-                adapter = adapter_cls()
-                source_tasks = asyncio.run(adapter.fetch_tasks(str(pref.path), source_cfg))
-                tasks.extend(source_tasks)
-            except Exception as exc:
-                console.print(f"  [yellow]Failed to collect from {source_cfg.type}: {exc}[/yellow]")
-
-        if not tasks:
-            console.print("  [dim]No tasks found.[/dim]")
-            continue
+        limit = project_config.limits.max_tasks_per_run
 
         table = Table(show_header=True, header_style="bold")
         table.add_column("#", style="dim", width=4)
@@ -162,18 +147,18 @@ def _dry_run(global_config, project_path: Path | None) -> None:
         table.add_column("Source", width=10)
         table.add_column("Priority", width=10)
 
-        for i, task in enumerate(tasks[: project_config.limits.max_tasks_per_run], 1):
-            table.add_row(str(i), task.title, task.source_type, task.priority)
+        for i, qt in enumerate(tasks[:limit], 1):
+            table.add_row(str(i), qt.title, qt.source_type, qt.priority)
 
         console.print(table)
-        total_tasks += min(len(tasks), project_config.limits.max_tasks_per_run)
-        if len(tasks) > project_config.limits.max_tasks_per_run:
+        total_tasks += min(len(tasks), limit)
+        if len(tasks) > limit:
             console.print(
-                f"  [dim]({len(tasks) - project_config.limits.max_tasks_per_run} "
+                f"  [dim]({len(tasks) - limit} "
                 f"additional tasks queued beyond limit)[/dim]"
             )
 
-    console.print(f"\n[bold]Total: {total_tasks} task(s) across {len(projects_to_run)} project(s)[/bold]")
+    console.print(f"\n[bold]Total: {total_tasks} task(s) across {len(projects)} project(s)[/bold]")
     console.print("[dim]Run without --dry-run to execute.[/dim]")
 
 

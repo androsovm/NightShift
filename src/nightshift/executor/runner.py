@@ -22,13 +22,15 @@ from nightshift.executor.quality_gates import run_all_gates, run_baseline_tests
 from nightshift.models import (
     GlobalConfig,
     ProjectConfig,
+    QueuedTask,
     RunResult,
     Task,
+    TaskAttempt,
     TaskPriority,
     TaskResult,
     TaskStatus,
 )
-from nightshift.sources import ADAPTERS
+from nightshift.storage.task_queue import get_pending_tasks, record_attempt
 
 log = structlog.get_logger(__name__)
 
@@ -49,10 +51,10 @@ async def execute_run(
     global_config: GlobalConfig,
     project_path: Path | None = None,
 ) -> RunResult:
-    """Execute a full NightShift run.
+    """Execute a full NightShift run from the local task queue.
 
-    If *project_path* is given only that project is processed; otherwise all
-    projects listed in *global_config* are processed.
+    If *project_path* is given only tasks for that project are processed;
+    otherwise all pending tasks across all projects are processed.
 
     Respects ``global_config.schedule.max_duration_hours`` — stops accepting
     new tasks once the wall-clock limit is reached.
@@ -64,21 +66,29 @@ async def execute_run(
 
     log.info("run_start", run_id=run_id, max_duration_hours=global_config.schedule.max_duration_hours)
 
-    # Determine which projects to process.
-    if project_path is not None:
-        project_paths = [project_path]
-    else:
-        project_paths = [ref.path for ref in global_config.projects]
+    # Load pending tasks from the local queue.
+    project_filter = str(project_path.resolve()) if project_path else None
+    pending = get_pending_tasks(project_path=project_filter)
+
+    if not pending:
+        log.info("no_pending_tasks")
+        return run_result
+
+    # Group by project_path (preserving priority order within each group).
+    projects: dict[str, list[QueuedTask]] = {}
+    for qt in pending:
+        projects.setdefault(qt.project_path, []).append(qt)
 
     prs_created = 0
 
-    for proj_path in project_paths:
-        proj_path = proj_path.resolve()
+    for proj_path_str, queued_tasks in projects.items():
+        proj_path = Path(proj_path_str).resolve()
         log.info("project_start", project=str(proj_path))
 
         try:
             results = await _process_project(
                 global_config, proj_path, run_id,
+                queued_tasks=queued_tasks,
                 run_start_time=run_start_time,
                 max_duration_seconds=max_duration_seconds,
                 prs_created=prs_created,
@@ -112,48 +122,27 @@ async def _process_project(
     project_path: Path,
     run_id: str,
     *,
+    queued_tasks: list[QueuedTask],
     run_start_time: float,
     max_duration_seconds: float,
     prs_created: int = 0,
 ) -> list[TaskResult]:
-    """Handle a single project: collect tasks, execute them, return results."""
+    """Handle a single project: execute queued tasks, return results."""
     project_config: ProjectConfig = load_project_config(project_path)
     limits = project_config.limits
 
     # 1. Prepare repository
     prepare_repo(project_path)
 
-    # 2. Collect tasks from all configured sources
-    tasks: list[Task] = []
-    for source_config in project_config.sources:
-        adapter_cls = ADAPTERS.get(source_config.type)
-        if adapter_cls is None:
-            log.warning("unknown_source_type", source_type=source_config.type)
-            continue
+    # 2. Apply max_tasks_per_run limit
+    tasks = queued_tasks[: limits.max_tasks_per_run]
 
-        adapter = adapter_cls()
-        try:
-            fetched = await adapter.fetch_tasks(str(project_path), source_config)
-            tasks.extend(fetched)
-        except Exception:
-            log.exception("fetch_tasks_error", source_type=source_config.type)
+    log.info("tasks_from_queue", count=len(tasks), project=str(project_path))
 
-    if not tasks:
-        log.info("no_tasks", project=str(project_path))
-        return []
-
-    # 3. Sort by priority (high > medium > low)
-    tasks.sort(key=lambda t: _PRIORITY_ORDER.get(t.priority, 99))
-
-    # 4. Limit to max_tasks_per_run
-    tasks = tasks[: limits.max_tasks_per_run]
-
-    log.info("tasks_collected", count=len(tasks), project=str(project_path))
-
-    # 5. Execute each task
+    # 3. Execute each task
     results: list[TaskResult] = []
 
-    for task in tasks:
+    for qt in tasks:
         # Check wall-clock limit
         elapsed = time.monotonic() - run_start_time
         if elapsed > max_duration_seconds:
@@ -163,7 +152,6 @@ async def _process_project(
                 max_hours=global_config.schedule.max_duration_hours,
                 remaining_tasks=len(tasks) - len(results),
             )
-            # Mark remaining tasks as skipped
             for remaining in tasks[len(results):]:
                 results.append(TaskResult(
                     task_id=remaining.id,
@@ -191,6 +179,7 @@ async def _process_project(
                 ))
             break
 
+        task = qt.to_task()
         task_result = await _execute_task(
             task=task,
             project_path=project_path,
@@ -198,6 +187,18 @@ async def _process_project(
             run_id=run_id,
         )
         results.append(task_result)
+
+        # Record attempt in the local queue.
+        attempt = TaskAttempt(
+            timestamp=datetime.now(tz=timezone.utc),
+            status=task_result.status,
+            run_id=run_id,
+            branch=task_result.branch,
+            pr_url=task_result.pr_url,
+            error=task_result.error,
+            duration_seconds=task_result.duration_seconds,
+        )
+        record_attempt(qt.id, attempt)
 
         if task_result.status == TaskStatus.PASSED and task_result.pr_url:
             prs_created += 1
@@ -279,7 +280,7 @@ async def _execute_task(
             cleanup_branch(project_path, branch)
             return task_result
 
-        # e. Push branch, create PR, mark done on source
+        # e. Push branch and create PR
         push_branch(project_path, branch)
 
         pr_title = f"[NightShift] {task.title}"
@@ -295,9 +296,6 @@ async def _execute_task(
         task_result.pr_url = pr_url
         task_result.pr_number = pr_number
         task_result.status = TaskStatus.PASSED
-
-        # Mark done on the source adapter.
-        await _mark_task_done(task, pr_url, project_path)
 
         log.info(
             "task_passed",
@@ -322,21 +320,3 @@ async def _execute_task(
         task_result.duration_seconds = time.monotonic() - start_time
 
     return task_result
-
-
-async def _mark_task_done(task: Task, pr_url: str, project_path: Path) -> None:
-    """Call ``mark_done`` on the appropriate source adapter."""
-    adapter_cls = ADAPTERS.get(task.source_type)
-    if adapter_cls is None:
-        return
-
-    project_config = load_project_config(project_path)
-    # Find the matching source config so the adapter is properly configured.
-    for source_config in project_config.sources:
-        if source_config.type == task.source_type:
-            adapter = adapter_cls()
-            try:
-                await adapter.mark_done(task, pr_url)
-            except Exception:
-                log.exception("mark_done_error", task_id=task.id)
-            break
