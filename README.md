@@ -165,6 +165,16 @@ Once the plugin is installed (`pip install nightshift-jira`), it will be automat
 | `nightshift install` | Set up scheduled runs (launchd/systemd) |
 | `nightshift uninstall` | Remove scheduled runs |
 
+### Sleep Prevention
+
+For NightShift to run on schedule, the machine must stay awake overnight.
+
+- **macOS**: Go to System Settings → Energy → Options → enable "Prevent automatic
+  sleeping when the display is off". Or run: `sudo pmset -c disablesleep 1`
+- **Linux**: Mask the sleep/suspend targets: `systemctl mask sleep.target suspend.target`
+
+`nightshift doctor` will warn if sleep prevention is not configured.
+
 ## Security Considerations
 
 - **Claude Code runs with `--dangerously-skip-permissions`** — this allows Claude to execute commands, edit files, and make commits without interactive confirmation. This is required for unattended overnight operation. Only run NightShift on repositories you trust, and always review the draft PRs it creates before merging.

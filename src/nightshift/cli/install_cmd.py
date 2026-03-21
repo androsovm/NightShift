@@ -273,6 +273,29 @@ def install() -> None:
     )
     console.print("[dim]Use 'nightshift uninstall' to remove.[/dim]")
 
+    # Sleep prevention warning
+    if system == "Darwin":
+        console.print()
+        console.print(Panel(
+            "[bold]Important:[/bold] Your Mac must not sleep for NightShift to run.\n"
+            "Go to System Settings → Energy → Options → enable\n"
+            "'Prevent automatic sleeping when the display is off'.\n\n"
+            "Or run: [bold]sudo pmset -c disablesleep 1[/bold]",
+            title="Sleep Prevention",
+            border_style="yellow",
+            expand=False,
+        ))
+    elif system == "Linux":
+        console.print()
+        console.print(Panel(
+            "[bold]Important:[/bold] Ensure your machine does not suspend overnight.\n"
+            "Check your power management settings or run:\n\n"
+            "[bold]systemctl mask sleep.target suspend.target[/bold]",
+            title="Sleep Prevention",
+            border_style="yellow",
+            expand=False,
+        ))
+
 
 def uninstall() -> None:
     """Remove NightShift from system scheduling."""
