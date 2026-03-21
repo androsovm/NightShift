@@ -1,8 +1,14 @@
 """Run result persistence."""
 
+import json
 from pathlib import Path
 
+import structlog
+from pydantic import ValidationError
+
 from nightshift.models.run import RunResult
+
+log = structlog.get_logger()
 
 RUNS_DIR = Path.home() / ".nightshift" / "runs"
 LOGS_DIR = Path.home() / ".nightshift" / "logs"
@@ -21,7 +27,11 @@ def load_run(run_id: str) -> RunResult | None:
     path = RUNS_DIR / f"{run_id}.json"
     if not path.exists():
         return None
-    return RunResult.model_validate_json(path.read_text())
+    try:
+        return RunResult.model_validate_json(path.read_text())
+    except (json.JSONDecodeError, ValidationError):
+        log.warning("corrupted_run_file", path=str(path), run_id=run_id)
+        return None
 
 
 def load_latest_run() -> RunResult | None:
@@ -29,9 +39,13 @@ def load_latest_run() -> RunResult | None:
     if not RUNS_DIR.exists():
         return None
     files = sorted(RUNS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not files:
-        return None
-    return RunResult.model_validate_json(files[0].read_text())
+    for path in files:
+        try:
+            return RunResult.model_validate_json(path.read_text())
+        except (json.JSONDecodeError, ValidationError):
+            log.warning("corrupted_run_file", path=str(path))
+            continue
+    return None
 
 
 def load_runs(limit: int = 10) -> list[RunResult]:
@@ -41,7 +55,11 @@ def load_runs(limit: int = 10) -> list[RunResult]:
     files = sorted(RUNS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     results: list[RunResult] = []
     for path in files[:limit]:
-        results.append(RunResult.model_validate_json(path.read_text()))
+        try:
+            results.append(RunResult.model_validate_json(path.read_text()))
+        except (json.JSONDecodeError, ValidationError):
+            log.warning("corrupted_run_file", path=str(path))
+            continue
     return results
 
 
