@@ -83,7 +83,19 @@ def run(
     import asyncio
 
     try:
-        result = asyncio.run(execute_run(global_config, project_path=project_path))
+        try:
+            result = asyncio.run(execute_run(global_config, project_path=project_path))
+        except RuntimeError as rt_err:
+            if "already running" in str(rt_err):
+                loop = asyncio.new_event_loop()
+                try:
+                    result = loop.run_until_complete(
+                        execute_run(global_config, project_path=project_path)
+                    )
+                finally:
+                    loop.close()
+            else:
+                raise
     except Exception as exc:
         console.print(f"[red]Run failed: {exc}[/red]")
         raise typer.Exit(1)
