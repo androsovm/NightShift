@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 from slugify import slugify
 
+from nightshift.models.config import CLAUDE_MODELS, DEFAULT_CLAUDE_MODEL
 from nightshift.models.task import QueuedTask, TaskPriority, TaskStatus
 from nightshift.storage.task_queue import (
     add_task,
@@ -70,6 +71,7 @@ def list_tasks(
     table.add_column("Priority", justify="center")
     table.add_column("Project", max_width=20)
     table.add_column("Source")
+    table.add_column("Model", max_width=25)
     table.add_column("#", justify="right")
 
     status_styles = {
@@ -94,6 +96,7 @@ def list_tasks(
             priority_styles.get(t.priority, t.priority),
             Path(t.project_path).name,
             t.source_type,
+            f"[dim]{t.model or '—'}[/dim]",
             str(len(t.attempts)),
         )
 
@@ -151,6 +154,15 @@ def add(
     constraints_raw = questionary.text("Constraints (comma-separated, optional):").ask()
     constraints = [c.strip() for c in constraints_raw.split(",") if c.strip()] if constraints_raw else []
 
+    model = questionary.select(
+        "Model:",
+        choices=[
+            questionary.Choice(m, value=m)
+            for m in CLAUDE_MODELS
+        ],
+        default=DEFAULT_CLAUDE_MODEL,
+    ).ask() or DEFAULT_CLAUDE_MODEL
+
     task_id = slugify(title)[:60]
 
     task = QueuedTask(
@@ -162,6 +174,7 @@ def add(
         intent=intent or None,
         scope=scope,
         constraints=constraints,
+        model=model,
     )
     add_task(task)
     console.print(f"[green]Added:[/green] {task.id}")
@@ -205,6 +218,7 @@ def edit(
     title: Optional[str] = typer.Option(None, "--title"),
     intent: Optional[str] = typer.Option(None, "--intent"),
     priority: Optional[str] = typer.Option(None, "--priority"),
+    model: Optional[str] = typer.Option(None, "--model"),
 ) -> None:
     """Edit a task's fields."""
     task = get_task(task_id)
@@ -214,7 +228,7 @@ def edit(
 
     fields: dict = {}
 
-    if title is None and intent is None and priority is None:
+    if title is None and intent is None and priority is None and model is None:
         # Interactive mode
         new_title = questionary.text("Title:", default=task.title).ask()
         if new_title and new_title != task.title:
@@ -231,6 +245,14 @@ def edit(
         ).ask()
         if new_priority and new_priority != task.priority:
             fields["priority"] = TaskPriority(new_priority)
+
+        new_model = questionary.select(
+            "Model:",
+            choices=CLAUDE_MODELS,
+            default=task.model or DEFAULT_CLAUDE_MODEL,
+        ).ask()
+        if new_model and new_model != task.model:
+            fields["model"] = new_model
     else:
         if title is not None:
             fields["title"] = title
@@ -238,6 +260,8 @@ def edit(
             fields["intent"] = intent
         if priority is not None:
             fields["priority"] = TaskPriority(priority)
+        if model is not None:
+            fields["model"] = model
 
     if not fields:
         console.print("[dim]No changes.[/dim]")

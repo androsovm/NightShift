@@ -16,6 +16,7 @@ classifiers = [
 dependencies = [
     "typer>=0.15",
     "rich>=13",
+    "textual>=0.85",
     "questionary>=2",
     "httpx>=0.28",
     "pydantic>=2.10",

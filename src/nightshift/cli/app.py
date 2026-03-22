@@ -15,19 +15,29 @@ from nightshift.cli.tasks_cmd import tasks_app
 app = typer.Typer(
     name="nightshift",
     help="Automated overnight task runner for Claude Code.",
-    no_args_is_help=True,
+    no_args_is_help=False,
+    invoke_without_command=True,
     rich_markup_mode="rich",
 )
 
 
-@app.callback()
+@app.callback(invoke_without_command=True)
 def main_callback(
+    ctx: typer.Context,
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose logging output."),
 ) -> None:
-    """Configure logging before any command runs."""
+    """Automated overnight task runner for Claude Code.
+
+    Run without arguments to launch the TUI dashboard.
+    """
     from nightshift.logging import configure_logging
 
     configure_logging(verbose=verbose)
+
+    if ctx.invoked_subcommand is None:
+        from nightshift.tui.app import run_dashboard
+
+        run_dashboard()
 
 
 app.command()(init)

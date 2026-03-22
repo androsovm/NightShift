@@ -78,6 +78,7 @@ def invoke_claude(
     prompt: str,
     timeout_minutes: int,
     log_file: Path,
+    model: str | None = None,
 ) -> tuple[bool, str]:
     """Run ``claude`` CLI in *project_path* with the given *prompt*.
 
@@ -90,6 +91,7 @@ def invoke_claude(
         project=str(project_path),
         timeout_minutes=timeout_minutes,
         log_file=str(log_file),
+        model=model,
     )
 
     timeout_seconds = timeout_minutes * 60
@@ -98,13 +100,17 @@ def invoke_claude(
 
     for attempt in range(1, _MAX_RETRIES + 1):
         try:
+            cmd = [
+                "claude",
+                "-p",
+                prompt,
+                "--dangerously-skip-permissions",
+            ]
+            if model:
+                cmd.extend(["--model", model])
+
             result = subprocess.run(
-                [
-                    "claude",
-                    "-p",
-                    prompt,
-                    "--dangerously-skip-permissions",
-                ],
+                cmd,
                 cwd=project_path,
                 capture_output=True,
                 text=True,

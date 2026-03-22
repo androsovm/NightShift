@@ -56,12 +56,22 @@ class ProjectLimits(BaseModel):
     max_lines_changed: int = 500
 
 
+# Models available in Claude Code CLI.
+CLAUDE_MODELS = [
+    "claude-sonnet-4-6",
+    "claude-opus-4-6",
+    "claude-haiku-4-5-20251001",
+]
+DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6"
+
+
 class ProjectConfig(BaseModel):
     """Per-project config stored in .nightshift.yaml."""
 
     sources: list[SourceConfig] = Field(default_factory=list)
     limits: ProjectLimits = Field(default_factory=ProjectLimits)
     claude_system_prompt: str | None = None
+    default_model: str = DEFAULT_CLAUDE_MODEL
     tasks: list[dict] = Field(default_factory=list)
 
 

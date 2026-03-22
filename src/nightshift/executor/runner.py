@@ -246,11 +246,13 @@ async def _execute_task(
 
         # c. Invoke Claude
         prompt = build_prompt(task, project_config.claude_system_prompt)
+        model = task.model or project_config.default_model
         success, output = invoke_claude(
             project_path=project_path,
             prompt=prompt,
             timeout_minutes=project_config.limits.task_timeout_minutes,
             log_file=log_file,
+            model=model,
         )
         task_result.log_file = str(log_file)
 

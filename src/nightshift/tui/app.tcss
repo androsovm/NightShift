@@ -1,0 +1,118 @@
+/* Nord Aurora theme — lazydocker-style bordered panels */
+
+Screen {
+    background: #2E3440;
+}
+
+/* -- Header: docked top -- */
+
+#header-bar {
+    height: 3;
+    padding: 1 1;
+    text-style: bold;
+    dock: top;
+}
+
+/* -- Footer: docked bottom -- */
+
+#context-footer {
+    height: 1;
+    padding: 0 1;
+    dock: bottom;
+    color: #616E88;
+}
+
+/* -- Main split: left + right columns -- */
+
+#main-split {
+    height: 1fr;
+}
+
+/* -- Left column -- */
+
+#left-column {
+    width: 1fr;
+    height: 1fr;
+}
+
+/* -- Right column -- */
+
+#right-column {
+    width: 1fr;
+    height: 1fr;
+}
+
+/* -- Bordered panels -- */
+
+.panel {
+    border: round #4C566A;
+    border-title-color: #88C0D0;
+    border-title-style: bold;
+    padding: 0 1;
+    height: 1fr;
+    background: #2E3440;
+}
+
+.panel:focus-within {
+    border: round #88C0D0;
+}
+
+/* -- Task queue panel -- */
+
+#task-queue-panel {
+    height: 1fr;
+}
+
+#task-queue-panel ListView {
+    height: 1fr;
+    scrollbar-size: 1 1;
+    background: #2E3440;
+}
+
+#task-queue-panel ListView > ListItem.--highlight {
+    background: #4C566A;
+}
+
+/* -- Projects panel -- */
+
+#projects-panel {
+    height: auto;
+    max-height: 10;
+}
+
+/* -- Task detail panel -- */
+
+#task-detail-panel {
+    height: 1fr;
+}
+
+/* -- Run detail panel -- */
+
+#run-detail-panel {
+    height: 1fr;
+}
+
+/* -- Run history panel -- */
+
+#run-history-panel {
+    height: 1fr;
+}
+
+#run-history-panel ListView {
+    height: 1fr;
+    scrollbar-size: 1 1;
+    background: #2E3440;
+}
+
+#run-history-panel ListView > ListItem.--highlight {
+    background: #4C566A;
+}
+
+/* -- Empty state -- */
+
+.empty-state {
+    text-align: center;
+    color: #616E88;
+    text-style: italic;
+    padding: 2 0;
+}

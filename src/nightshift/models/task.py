@@ -34,6 +34,7 @@ class Task(BaseModel):
     scope: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
     estimated_minutes: int = 30
+    model: str | None = None
 
 
 class TaskAttempt(BaseModel):
@@ -62,6 +63,7 @@ class QueuedTask(BaseModel):
     scope: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
     estimated_minutes: int = 30
+    model: str | None = None
     added_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
     attempts: list[TaskAttempt] = Field(default_factory=list)
 
@@ -79,6 +81,7 @@ class QueuedTask(BaseModel):
             scope=list(task.scope),
             constraints=list(task.constraints),
             estimated_minutes=task.estimated_minutes,
+            model=task.model,
         )
 
     def to_task(self) -> Task:
@@ -94,4 +97,5 @@ class QueuedTask(BaseModel):
             scope=list(self.scope),
             constraints=list(self.constraints),
             estimated_minutes=self.estimated_minutes,
+            model=self.model,
         )

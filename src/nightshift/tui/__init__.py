@@ -1,0 +1,1 @@
+"""NightShift TUI dashboard."""
