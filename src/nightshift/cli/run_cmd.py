@@ -82,8 +82,16 @@ def run(
 
     import asyncio
 
+    coro = execute_run(global_config, project_path=project_path)
     try:
-        result = asyncio.run(execute_run(global_config, project_path=project_path))
+        try:
+            result = asyncio.run(coro)
+        except RuntimeError as rt_err:
+            if "already running" in str(rt_err):
+                loop = asyncio.get_event_loop()
+                result = loop.run_until_complete(coro)
+            else:
+                raise
     except Exception as exc:
         console.print(f"[red]Run failed: {exc}[/red]")
         raise typer.Exit(1)
