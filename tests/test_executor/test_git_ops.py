@@ -53,6 +53,58 @@ class TestPrepareRepo:
             assert c.kwargs["cwd"] == project
 
 
+class TestPrepareRepoErrorHandling:
+    """Tests for network-failure resilience in prepare_repo()."""
+
+    @patch("nightshift.executor.git_ops.subprocess.run")
+    def test_prepare_repo_fetch_failure_continues(
+        self, mock_run: MagicMock, project: Path
+    ) -> None:
+        """If fetch fails, checkout and pull are still called."""
+
+        def side_effect(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+            if "fetch" in cmd:
+                raise subprocess.CalledProcessError(1, cmd)
+            return _ok()
+
+        mock_run.side_effect = side_effect
+        prepare_repo(project)
+
+        cmds = [c.args[0] for c in mock_run.call_args_list]
+        assert any("checkout" in c for c in cmds)
+        assert any("pull" in c for c in cmds)
+
+    @patch("nightshift.executor.git_ops.subprocess.run")
+    def test_prepare_repo_pull_failure_continues(
+        self, mock_run: MagicMock, project: Path
+    ) -> None:
+        """If pull fails, no exception propagates."""
+
+        def side_effect(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+            if "pull" in cmd:
+                raise subprocess.CalledProcessError(1, cmd)
+            return _ok()
+
+        mock_run.side_effect = side_effect
+        # Should not raise
+        prepare_repo(project)
+
+    @patch("nightshift.executor.git_ops.subprocess.run")
+    def test_prepare_repo_checkout_failure_raises(
+        self, mock_run: MagicMock, project: Path
+    ) -> None:
+        """If checkout main fails, the exception propagates."""
+
+        def side_effect(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+            if "checkout" in cmd:
+                raise subprocess.CalledProcessError(1, cmd)
+            return _ok()
+
+        mock_run.side_effect = side_effect
+        with pytest.raises(subprocess.CalledProcessError):
+            prepare_repo(project)
+
+
 # ---------------------------------------------------------------------------
 # create_branch
 # ---------------------------------------------------------------------------
