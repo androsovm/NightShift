@@ -72,8 +72,12 @@ class YouTrackSource:
         fields = "idReadable,summary,description,customFields(name,value(name))"
 
         url = f"{base_url}/api/issues"
+        query = f"tag: {{{tag}}}"
+        if config.states:
+            state_expr = ", ".join(f"{{{s}}}" for s in config.states)
+            query += f" State: {state_expr}"
         params: dict[str, str] = {
-            "query": f"tag: {{{tag}}}",
+            "query": query,
             "fields": fields,
             "$top": "100",
         }

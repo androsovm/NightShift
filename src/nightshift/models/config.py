@@ -44,6 +44,7 @@ class SourceConfig(BaseModel):
     base_url: str | None = None
     project_id: str | None = None
     tag: str = "nightshift"
+    states: list[str] = Field(default_factory=list)
     # Trello
     board_id: str | None = None
     list_name: str = "NightShift Queue"

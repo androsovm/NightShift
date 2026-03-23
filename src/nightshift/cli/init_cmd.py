@@ -245,8 +245,13 @@ def _configure_source(source_type: str, project_path: Path) -> SourceConfig:
         ).ask()
         project_id = questionary.text("YouTrack project ID:").ask()
         tag = questionary.text("YouTrack tag for tasks:", default="nightshift").ask()
+        states_input = questionary.text(
+            "Filter by states (comma-separated, e.g. 'Ready for DEV, Open'; empty = all):",
+            default="",
+        ).ask()
+        states = [s.strip() for s in (states_input or "").split(",") if s.strip()]
         return SourceConfig(
-            type="youtrack", base_url=base_url, project_id=project_id, tag=tag
+            type="youtrack", base_url=base_url, project_id=project_id, tag=tag, states=states
         )
 
     if source_type == "trello":
