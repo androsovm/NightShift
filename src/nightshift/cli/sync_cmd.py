@@ -7,15 +7,24 @@ from pathlib import Path
 from typing import Optional
 
 import questionary
+import structlog
 import typer
 from rich.console import Console
 
 from nightshift.config.loader import load_global_config, load_project_config
-from nightshift.models.task import QueuedTask
+from nightshift.models.task import QueuedTask, TaskStatus
 from nightshift.sources import ADAPTERS
-from nightshift.storage.task_queue import add_task, find_by_source_ref
+from nightshift.sources.github_reviews import check_approved_prs, fetch_review_tasks
+from nightshift.sources.github_source import GitHubSource
+from nightshift.storage.task_queue import (
+    add_task,
+    find_by_source_ref,
+    load_tasks,
+    update_task,
+)
 
 console = Console()
+log = structlog.get_logger(__name__)
 
 
 def _content_changed(existing: QueuedTask, new: QueuedTask) -> bool:
@@ -27,6 +36,51 @@ def _content_changed(existing: QueuedTask, new: QueuedTask) -> bool:
         or existing.constraints != new.constraints
         or existing.priority != new.priority
     )
+
+
+async def _mark_approved(pr_number: int, pr_url: str) -> int:
+    """Mark all tasks related to an approved PR as DONE.
+
+    Returns the number of tasks marked done.
+    """
+    tasks = load_tasks()
+    done_count = 0
+
+    for task in tasks:
+        if task.status not in (TaskStatus.PASSED, TaskStatus.PENDING):
+            continue
+
+        # Match review tasks by pr_number field
+        is_review = task.pr_number == pr_number
+        # Match original tasks by pr_url in their attempts
+        is_original = any(
+            a.pr_url and a.pr_url == pr_url
+            for a in task.attempts
+        )
+
+        if not (is_review or is_original):
+            continue
+
+        update_task(task.id, status=TaskStatus.DONE)
+        console.print(f"  [green]done[/green] {task.title} (PR #{pr_number} approved)")
+        done_count += 1
+
+        # Call source adapter mark_done for the original task (not review tasks)
+        if is_original and task.source_type != "github_review":
+            adapter_cls = ADAPTERS.get(task.source_type)
+            if adapter_cls:
+                try:
+                    adapter = adapter_cls()
+                    await adapter.mark_done(task.to_task(), pr_url)
+                except Exception as exc:
+                    log.warning(
+                        "mark_done_error",
+                        task_id=task.id,
+                        source_type=task.source_type,
+                        error=str(exc),
+                    )
+
+    return done_count
 
 
 async def _do_sync(project_filter: str | None) -> None:
@@ -92,7 +146,6 @@ async def _do_sync(project_filter: str | None) -> None:
                     ).ask()
 
                     if action == "update":
-                        from nightshift.storage.task_queue import update_task
                         update_task(
                             existing.id,
                             title=queued.title,
@@ -109,7 +162,55 @@ async def _do_sync(project_filter: str | None) -> None:
                     else:
                         skipped += 1
 
-    console.print(f"\n[bold]Sync complete:[/bold] {added} added, {updated} updated, {skipped} skipped")
+    # ------------------------------------------------------------------
+    # Phase 2: Scan open NightShift PRs for review feedback & approvals
+    # ------------------------------------------------------------------
+    reviews_added = 0
+    done_count = 0
+    scanned_repos: set[str] = set()
+
+    for proj_path in project_paths:
+        proj_path = proj_path.resolve()
+
+        # Detect GitHub repo from git remote (works regardless of source type)
+        repo = GitHubSource._detect_repo_from(proj_path)
+        if not repo or repo in scanned_repos:
+            continue
+        scanned_repos.add(repo)
+
+        console.print(f"\n[bold]Scanning PR reviews for [cyan]{repo}[/cyan][/bold]")
+
+        # 1. Fetch review tasks for PRs with unaddressed feedback
+        try:
+            review_tasks = await fetch_review_tasks(str(proj_path), repo)
+        except Exception as exc:
+            console.print(f"  [red]Error scanning PR reviews: {exc}[/red]")
+            continue
+
+        for task in review_tasks:
+            existing = find_by_source_ref("github_review", task.source_ref)
+            if existing is None:
+                queued = QueuedTask.from_task(task)
+                add_task(queued)
+                console.print(f"  [yellow]review[/yellow] {task.title}")
+                reviews_added += 1
+
+        # 2. Check for approved PRs → mark tasks DONE
+        try:
+            approved = await check_approved_prs(repo)
+        except Exception as exc:
+            console.print(f"  [red]Error checking PR approvals: {exc}[/red]")
+            continue
+
+        for pr_number, pr_url in approved:
+            done_count += await _mark_approved(pr_number, pr_url)
+
+    parts = [f"{added} added", f"{updated} updated", f"{skipped} skipped"]
+    if reviews_added:
+        parts.append(f"{reviews_added} review tasks")
+    if done_count:
+        parts.append(f"{done_count} done (approved)")
+    console.print(f"\n[bold]Sync complete:[/bold] {', '.join(parts)}")
 
 
 def sync(

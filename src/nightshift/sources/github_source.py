@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 import httpx
 import structlog
@@ -37,11 +38,18 @@ class GitHubSource:
     @staticmethod
     def _detect_repo() -> str | None:
         """Try to derive ``owner/repo`` from the current git remote."""
+        return GitHubSource._detect_repo_from(None)
+
+    @staticmethod
+    def _detect_repo_from(cwd: "Path | None") -> str | None:
+        """Try to derive ``owner/repo`` from the git remote in *cwd*."""
         try:
+            cmd = ["git", "remote", "get-url", "origin"]
             url = subprocess.check_output(
-                ["git", "remote", "get-url", "origin"],
+                cmd,
                 text=True,
                 stderr=subprocess.DEVNULL,
+                cwd=cwd,
             ).strip()
         except (subprocess.CalledProcessError, FileNotFoundError):
             return None

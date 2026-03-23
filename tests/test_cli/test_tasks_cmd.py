@@ -197,10 +197,11 @@ class TestRunnerRecordsAttempts:
         with (
             patch("nightshift.executor.runner.load_project_config", return_value=project_config),
             patch("nightshift.executor.runner.prepare_repo"),
-            patch("nightshift.executor.runner.create_branch", return_value="nightshift/t1"),
+            patch("nightshift.executor.runner.create_branch", return_value=("nightshift/t1", False)),
             patch("nightshift.executor.runner.run_baseline_tests", return_value=(True, 5, 0)),
             patch("nightshift.executor.runner.build_prompt", return_value="prompt"),
             patch("nightshift.executor.runner.invoke_claude", return_value=(True, "ok")),
+            patch("nightshift.executor.runner.autofix_and_commit", return_value=False),
             patch("nightshift.executor.git_ops.get_diff_stats", return_value=(2, 10, 3)),
             patch("nightshift.executor.runner.run_all_gates", return_value=(True, "All gates passed")),
             patch("nightshift.executor.runner.push_branch"),
@@ -248,7 +249,7 @@ class TestRunnerRecordsAttempts:
         with (
             patch("nightshift.executor.runner.load_project_config", return_value=project_config),
             patch("nightshift.executor.runner.prepare_repo"),
-            patch("nightshift.executor.runner.create_branch", return_value="nightshift/t1"),
+            patch("nightshift.executor.runner.create_branch", return_value=("nightshift/t1", False)),
             patch("nightshift.executor.runner.run_baseline_tests", return_value=(True, 5, 0)),
             patch("nightshift.executor.runner.build_prompt", return_value="prompt"),
             patch("nightshift.executor.runner.invoke_claude", return_value=(False, "Claude failed")),

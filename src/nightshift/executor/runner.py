@@ -12,9 +12,13 @@ from slugify import slugify
 from nightshift.config.loader import load_project_config
 from nightshift.executor.claude import build_prompt, invoke_claude
 from nightshift.executor.git_ops import (
+    autofix_and_commit,
+    checkout_pr_branch,
     cleanup_branch,
+    comment_on_pr,
     create_branch,
     create_pr,
+    get_pr_url,
     prepare_repo,
     push_branch,
 )
@@ -30,7 +34,7 @@ from nightshift.models import (
     TaskResult,
     TaskStatus,
 )
-from nightshift.storage.task_queue import get_pending_tasks, record_attempt
+from nightshift.storage.task_queue import get_pending_tasks, record_attempt, update_task
 
 log = structlog.get_logger(__name__)
 
@@ -179,6 +183,9 @@ async def _process_project(
                 ))
             break
 
+        # Mark as running in the queue file so status is accurate on disk.
+        update_task(qt.id, status=TaskStatus.RUNNING)
+
         task = qt.to_task()
         task_result = await _execute_task(
             task=task,
@@ -234,9 +241,15 @@ async def _execute_task(
         status=TaskStatus.FAILED,
     )
 
+    branch_reused = False
+
     try:
-        # a. Create feature branch
-        branch = create_branch(project_path, slug)
+        # a. Create or checkout branch
+        if task.pr_branch:
+            checkout_pr_branch(project_path, task.pr_branch)
+            branch = task.pr_branch
+        else:
+            branch, branch_reused = create_branch(project_path, slug)
         task_result.branch = branch
 
         # b. Run baseline tests
@@ -262,7 +275,10 @@ async def _execute_task(
             cleanup_branch(project_path, branch)
             return task_result
 
-        # d. Run quality gates
+        # d. Auto-fix trivial lint issues before quality gates
+        autofix_and_commit(project_path)
+
+        # e. Run quality gates
         from nightshift.executor.git_ops import get_diff_stats
 
         files_changed, lines_added, lines_removed = get_diff_stats(project_path)
@@ -282,19 +298,30 @@ async def _execute_task(
             cleanup_branch(project_path, branch)
             return task_result
 
-        # e. Push branch and create PR
-        push_branch(project_path, branch)
+        # f. Push branch and create/update PR
+        push_branch(project_path, branch, force_with_lease=branch_reused)
 
-        pr_title = f"[NightShift] {task.title}"
-        pr_body = (
-            f"Automated PR created by NightShift.\n\n"
-            f"**Task:** {task.title}\n"
-            f"**Source:** {task.source_type}\n"
-            f"**Priority:** {task.priority}\n\n"
-            f"---\n\n"
-            f"### Quality Gates\n{gates_msg}\n"
-        )
-        pr_url, pr_number = create_pr(project_path, branch, pr_title, pr_body)
+        if task.pr_number:
+            # Review task — comment on existing PR
+            comment_on_pr(
+                project_path,
+                task.pr_number,
+                f"Addressed review feedback.\n\n### Quality Gates\n{gates_msg}",
+            )
+            pr_url = get_pr_url(project_path, task.pr_number)
+            pr_number = task.pr_number
+        else:
+            pr_title = f"[NightShift] {task.title}"
+            pr_body = (
+                f"Automated PR created by NightShift.\n\n"
+                f"**Task:** {task.title}\n"
+                f"**Source:** {task.source_type}\n"
+                f"**Priority:** {task.priority}\n\n"
+                f"---\n\n"
+                f"### Quality Gates\n{gates_msg}\n"
+            )
+            pr_url, pr_number = create_pr(project_path, branch, pr_title, pr_body)
+
         task_result.pr_url = pr_url
         task_result.pr_number = pr_number
         task_result.status = TaskStatus.PASSED

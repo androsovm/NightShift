@@ -114,21 +114,31 @@ class TestCreateBranch:
     @patch("nightshift.executor.git_ops.subprocess.run")
     def test_branch_name_format(self, mock_run: MagicMock, project: Path) -> None:
         mock_run.return_value = _ok()
-        branch = create_branch(project, "fix-imports")
+        branch, reused = create_branch(project, "fix-imports")
 
         assert branch.startswith("nightshift/fix-imports-")
+        assert not reused
         # Date suffix is 8 digits.
         date_part = branch.rsplit("-", 1)[-1]
         assert len(date_part) == 8
         assert date_part.isdigit()
 
     @patch("nightshift.executor.git_ops.subprocess.run")
-    def test_runs_checkout_b(self, mock_run: MagicMock, project: Path) -> None:
+    def test_runs_checkout_B(self, mock_run: MagicMock, project: Path) -> None:
         mock_run.return_value = _ok()
-        branch = create_branch(project, "slug")
+        branch, _reused = create_branch(project, "slug")
 
-        cmd = mock_run.call_args[0][0]
-        assert cmd == [*_GIT_BASE, "checkout", "-b", branch]
+        # Uses -B (create-or-reset) instead of -b.
+        checkout_call = mock_run.call_args_list[-1][0][0]
+        assert checkout_call == [*_GIT_BASE, "checkout", "-B", branch]
+
+    @patch("nightshift.executor.git_ops.subprocess.run")
+    def test_reused_flag_when_branch_exists(self, mock_run: MagicMock, project: Path) -> None:
+        # First call (branch --list) returns matching branch name; second call (checkout -B) succeeds.
+        mock_run.side_effect = [_ok("  nightshift/slug-20260323\n"), _ok()]
+        _branch, reused = create_branch(project, "slug")
+
+        assert reused is True
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +156,21 @@ class TestPushBranch:
         assert cmd == [
             *_GIT_BASE,
             "push",
+            "-u",
+            "origin",
+            "nightshift/feature-20260318",
+        ]
+
+    @patch("nightshift.executor.git_ops.subprocess.run")
+    def test_push_force_with_lease(self, mock_run: MagicMock, project: Path) -> None:
+        mock_run.return_value = _ok()
+        push_branch(project, "nightshift/feature-20260318", force_with_lease=True)
+
+        cmd = mock_run.call_args[0][0]
+        assert cmd == [
+            *_GIT_BASE,
+            "push",
+            "--force-with-lease",
             "-u",
             "origin",
             "nightshift/feature-20260318",

@@ -35,6 +35,8 @@ class Task(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     estimated_minutes: int = 30
     model: str | None = None
+    pr_branch: str | None = None
+    pr_number: int | None = None
 
 
 class TaskAttempt(BaseModel):
@@ -64,6 +66,8 @@ class QueuedTask(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     estimated_minutes: int = 30
     model: str | None = None
+    pr_branch: str | None = None
+    pr_number: int | None = None
     added_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
     attempts: list[TaskAttempt] = Field(default_factory=list)
 
@@ -82,6 +86,8 @@ class QueuedTask(BaseModel):
             constraints=list(task.constraints),
             estimated_minutes=task.estimated_minutes,
             model=task.model,
+            pr_branch=task.pr_branch,
+            pr_number=task.pr_number,
         )
 
     def to_task(self) -> Task:
@@ -98,4 +104,6 @@ class QueuedTask(BaseModel):
             constraints=list(self.constraints),
             estimated_minutes=self.estimated_minutes,
             model=self.model,
+            pr_branch=self.pr_branch,
+            pr_number=self.pr_number,
         )

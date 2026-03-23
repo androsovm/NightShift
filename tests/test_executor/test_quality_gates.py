@@ -151,9 +151,13 @@ class TestRunBaselineTests:
 class TestRunLinter:
     @patch("nightshift.executor.quality_gates.subprocess.run")
     @patch("nightshift.executor.quality_gates.shutil.which")
+    @patch("nightshift.executor.quality_gates.get_changed_files")
     def test_ruff_passes(
-        self, mock_which: MagicMock, mock_run: MagicMock, project: Path
+        self, mock_changed: MagicMock, mock_which: MagicMock, mock_run: MagicMock, project: Path
     ) -> None:
+        project.mkdir(parents=True, exist_ok=True)
+        (project / "main.py").touch()
+        mock_changed.return_value = ["main.py"]
         mock_which.side_effect = lambda name: "/usr/bin/ruff" if name == "ruff" else None
         mock_run.return_value = _ok(stdout="All checks passed!\n")
         ok, output = run_linter(project)
@@ -161,13 +165,17 @@ class TestRunLinter:
         assert "All checks passed" in output
 
         cmd = mock_run.call_args[0][0]
-        assert cmd == ["ruff", "check", "."]
+        assert cmd == ["ruff", "check", "main.py"]
 
     @patch("nightshift.executor.quality_gates.subprocess.run")
     @patch("nightshift.executor.quality_gates.shutil.which")
+    @patch("nightshift.executor.quality_gates.get_changed_files")
     def test_ruff_fails(
-        self, mock_which: MagicMock, mock_run: MagicMock, project: Path
+        self, mock_changed: MagicMock, mock_which: MagicMock, mock_run: MagicMock, project: Path
     ) -> None:
+        project.mkdir(parents=True, exist_ok=True)
+        (project / "main.py").touch()
+        mock_changed.return_value = ["main.py"]
         mock_which.side_effect = lambda name: "/usr/bin/ruff" if name == "ruff" else None
         mock_run.return_value = _ok(
             stdout="Found 3 errors\n", returncode=1
@@ -177,9 +185,13 @@ class TestRunLinter:
 
     @patch("nightshift.executor.quality_gates.subprocess.run")
     @patch("nightshift.executor.quality_gates.shutil.which")
+    @patch("nightshift.executor.quality_gates.get_changed_files")
     def test_falls_back_to_flake8(
-        self, mock_which: MagicMock, mock_run: MagicMock, project: Path
+        self, mock_changed: MagicMock, mock_which: MagicMock, mock_run: MagicMock, project: Path
     ) -> None:
+        project.mkdir(parents=True, exist_ok=True)
+        (project / "main.py").touch()
+        mock_changed.return_value = ["main.py"]
         mock_which.side_effect = lambda name: (
             "/usr/bin/flake8" if name == "flake8" else None
         )
@@ -187,17 +199,28 @@ class TestRunLinter:
         ok, output = run_linter(project)
         assert ok is True
         cmd = mock_run.call_args[0][0]
-        assert cmd == ["flake8", "."]
+        assert cmd == ["flake8", "main.py"]
 
     @patch("nightshift.executor.quality_gates.shutil.which", return_value=None)
+    @patch("nightshift.executor.quality_gates.get_changed_files")
     def test_no_linter_available(
-        self, mock_which: MagicMock, project: Path
+        self, mock_changed: MagicMock, mock_which: MagicMock, project: Path
     ) -> None:
-        # project dir must exist for glob to work
         project.mkdir(parents=True, exist_ok=True)
+        mock_changed.return_value = ["main.py"]
+        (project / "main.py").touch()
         ok, output = run_linter(project)
         assert ok is True
         assert "skipped" in output.lower()
+
+    @patch("nightshift.executor.quality_gates.get_changed_files")
+    def test_no_changed_files(
+        self, mock_changed: MagicMock, project: Path
+    ) -> None:
+        mock_changed.return_value = []
+        ok, output = run_linter(project)
+        assert ok is True
+        assert "No changed files" in output
 
 
 # ---------------------------------------------------------------------------

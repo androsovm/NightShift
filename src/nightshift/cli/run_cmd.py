@@ -18,12 +18,17 @@ def run(
     project: Optional[str] = typer.Option(
         None, "--project", "-p", help="Run only for a specific project path or name."
     ),
+    retry_failed: bool = typer.Option(
+        False, "--retry-failed", help="Requeue all failed tasks before running."
+    ),
 ) -> None:
     """Execute a NightShift run (collect tasks and process them)."""
     from nightshift.config.loader import load_global_config
     from nightshift.executor.runner import execute_run
+    from nightshift.models.task import TaskStatus
     from nightshift.reporting.digest import format_summary
     from nightshift.storage.store import save_run
+    from nightshift.storage.task_queue import load_tasks, update_task
 
     try:
         global_config = load_global_config()
@@ -50,6 +55,20 @@ def run(
                 for pref in global_config.projects:
                     console.print(f"  - {pref.path}")
                 raise typer.Exit(1)
+
+    # Requeue failed tasks if requested
+    if retry_failed:
+        requeued = 0
+        for t in load_tasks():
+            if t.status == TaskStatus.FAILED:
+                if project_path and Path(t.project_path) != project_path:
+                    continue
+                update_task(t.id, status=TaskStatus.PENDING)
+                requeued += 1
+        if requeued:
+            console.print(f"[green]Requeued {requeued} failed task(s).[/green]")
+        else:
+            console.print("[dim]No failed tasks to retry.[/dim]")
 
     if dry_run:
         _dry_run(global_config, project_path)

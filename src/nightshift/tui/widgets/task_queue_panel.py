@@ -56,35 +56,39 @@ class TaskQueuePanel(Static):
         self._fingerprint = fp
         self._tasks = list(tasks)
 
-        self._list_view.clear()
+        # Build new items before touching the DOM.
+        new_items: list[ListItem] = []
 
         if not tasks:
-            self._list_view.mount(
+            new_items.append(
                 ListItem(Label(Text("No pending tasks", style=f"italic {GREY}")))
             )
-            return
+        else:
+            for task in tasks:
+                text = Text()
+                is_failed = task.status == TaskStatus.FAILED
+                is_running = task.status == TaskStatus.RUNNING
+                if is_running:
+                    text.append(" >>> ", style=f"bold {GREEN}")
+                    text.append("[running]", style=f"{GREEN}")
+                elif is_failed:
+                    text.append(" ✗ ", style=f"{RED}")
+                    text.append("[failed]", style=f"{RED}")
+                else:
+                    priority_symbol, priority_color = PRIORITY_DISPLAY.get(
+                        task.priority, ("·", GREY)
+                    )
+                    text.append(f" {priority_symbol} ", style=f"{priority_color}")
+                    text.append(f"[{task.priority.value}]", style=f"{priority_color}")
+                text.append("  ", style="default")
+                title_color = GREEN if is_running else RED if is_failed else CYAN
+                text.append(task.title[:50], style=f"{title_color}")
+                text.append("  ", style="default")
+                project_name = Path(task.project_path).name
+                text.append(project_name, style=f"{GREY}")
 
-        for task in tasks:
-            text = Text()
-            is_failed = task.status == TaskStatus.FAILED
-            is_running = task.status == TaskStatus.RUNNING
-            if is_running:
-                text.append(" >>> ", style=f"bold {GREEN}")
-                text.append("[running]", style=f"{GREEN}")
-            elif is_failed:
-                text.append(" ✗ ", style=f"{RED}")
-                text.append("[failed]", style=f"{RED}")
-            else:
-                priority_symbol, priority_color = PRIORITY_DISPLAY.get(
-                    task.priority, ("·", GREY)
-                )
-                text.append(f" {priority_symbol} ", style=f"{priority_color}")
-                text.append(f"[{task.priority.value}]", style=f"{priority_color}")
-            text.append("  ", style="default")
-            title_color = GREEN if is_running else RED if is_failed else CYAN
-            text.append(task.title[:50], style=f"{title_color}")
-            text.append("  ", style="default")
-            project_name = Path(task.project_path).name
-            text.append(project_name, style=f"{GREY}")
+                new_items.append(ListItem(Label(text)))
 
-            self._list_view.mount(ListItem(Label(text)))
+        # Single atomic DOM swap: remove all children, then mount all new items.
+        self._list_view.clear()
+        self._list_view.mount(*new_items)

@@ -31,6 +31,7 @@ class ContextFooter(Static):
             ("R", "Run all"),
             ("t", "Add"),
             ("x", "Remove"),
+            ("e", "Retry"),
             ("s", "Sync"),
             ("?", "Help"),
         ]

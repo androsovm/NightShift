@@ -9,7 +9,7 @@ from pathlib import Path
 
 import structlog
 
-from nightshift.executor.git_ops import get_diff_stats
+from nightshift.executor.git_ops import get_changed_files, get_diff_stats
 from nightshift.models.config import ProjectLimits
 
 log = structlog.get_logger(__name__)
@@ -86,30 +86,49 @@ def run_baseline_tests(project_path: Path) -> tuple[bool, int, int]:
 
 
 def run_linter(project_path: Path) -> tuple[bool, str]:
-    """Auto-detect and run a linter (ruff, flake8, or eslint).
+    """Auto-detect and run a linter on changed files only.
+
+    Only files changed between ``main`` and ``HEAD`` are checked, so
+    pre-existing linter errors in untouched files do not block the run.
 
     Returns ``(passed, output)``.
     """
+    changed = get_changed_files(project_path)
+    if not changed:
+        log.info("linter_skip_no_changes")
+        return True, "No changed files to lint."
+
     # Try linters in preference order.
-    for linter, args in [
-        ("ruff", ["ruff", "check", "."]),
-        ("flake8", ["flake8", "."]),
-        ("eslint", ["npx", "eslint", "."]),
+    for linter, base_args in [
+        ("ruff", ["ruff", "check"]),
+        ("flake8", ["flake8"]),
+        ("eslint", ["npx", "eslint"]),
     ]:
         if linter == "eslint":
-            # Only attempt eslint when a config exists.
             eslint_configs = list(project_path.glob(".eslintrc*")) + list(
                 project_path.glob("eslint.config.*")
             )
             if not eslint_configs:
                 continue
-            cmd = args
         else:
             if not shutil.which(linter):
                 continue
-            cmd = args
 
-        log.info("run_linter", linter=linter)
+        # Filter to changed files that still exist and match the linter's language.
+        if linter in ("ruff", "flake8"):
+            targets = [f for f in changed if f.endswith(".py") and (project_path / f).exists()]
+        else:
+            targets = [
+                f for f in changed
+                if f.endswith((".js", ".jsx", ".ts", ".tsx")) and (project_path / f).exists()
+            ]
+
+        if not targets:
+            log.info("linter_skip_no_matching_files", linter=linter)
+            return True, f"No changed files for {linter} to check."
+
+        cmd = base_args + targets
+        log.info("run_linter", linter=linter, files=len(targets))
         try:
             result = subprocess.run(
                 cmd,

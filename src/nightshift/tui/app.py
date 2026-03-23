@@ -571,6 +571,10 @@ class NightShiftApp(App):
         Binding("e", "retry_task", "Retry failed", show=False),
     ]
 
+    # Task IDs that the TUI has launched but the executor hasn't picked up yet.
+    # Used purely for visual feedback — never written to disk.
+    _launched_task_ids: set[str] = set()
+
     def compose(self) -> ComposeResult:
         yield HeaderBar()
         with Horizontal(id="main-split"):
@@ -590,12 +594,23 @@ class NightShiftApp(App):
     def _poll_data(self) -> None:
         """Refresh all panels from disk storage."""
         from nightshift.config.loader import load_global_config
+        from nightshift.models.task import TaskStatus
         from nightshift.storage.store import load_latest_run, load_runs
         from nightshift.storage.task_queue import get_pending_tasks, load_tasks
 
         # Tasks — show pending, running, and failed (active tasks need attention)
         all_tasks = load_tasks()
         pending = [t for t in all_tasks if t.status.value in ("pending", "running", "failed")]
+
+        # Overlay in-memory "launched" state: show pending tasks as running
+        # if TUI launched them but executor hasn't updated the file yet.
+        # Clear IDs once the executor has set a real terminal status.
+        for task in pending:
+            if task.id in self._launched_task_ids:
+                if task.status.value in ("passed", "failed", "skipped"):
+                    self._launched_task_ids.discard(task.id)
+                else:
+                    task.status = TaskStatus.RUNNING
 
         # Projects
         config = load_global_config()
@@ -794,12 +809,13 @@ class NightShiftApp(App):
     _run_label: str = ""
 
     def _mark_tasks_running(self, task_ids: list[str]) -> None:
-        """Set task status to running immediately for UI feedback."""
-        from nightshift.models.task import TaskStatus
-        from nightshift.storage.task_queue import update_task
+        """Mark tasks as visually running in the TUI (in-memory only).
 
-        for task_id in task_ids:
-            update_task(task_id, status=TaskStatus.RUNNING)
+        The actual status in tasks.yaml stays pending so the executor
+        subprocess can pick them up via ``get_pending_tasks()``.
+        """
+        self._launched_task_ids.update(task_ids)
+        self._poll_data()
 
     def _run_command(self, *args: str, label: str = "Running...") -> None:
         """Run a CLI command in background with live feedback."""
@@ -830,6 +846,7 @@ class NightShiftApp(App):
         if event.worker.name != "nightshift-run":
             return
         if event.state in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
+            self._launched_task_ids.clear()
             self.query_one(HeaderBar).set_idle()
             self.query_one(RunHistoryPanel).set_idle()
             self._poll_data()
