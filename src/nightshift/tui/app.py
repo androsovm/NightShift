@@ -568,6 +568,7 @@ class NightShiftApp(App):
         Binding("R", "run_all", "Run all", show=False),
         Binding("s", "trigger_sync", "Sync", show=False),
         Binding("d", "trigger_doctor", "Doctor", show=False),
+        Binding("e", "retry_task", "Retry failed", show=False),
     ]
 
     def compose(self) -> ComposeResult:
@@ -592,9 +593,9 @@ class NightShiftApp(App):
         from nightshift.storage.store import load_latest_run, load_runs
         from nightshift.storage.task_queue import get_pending_tasks, load_tasks
 
-        # Tasks
+        # Tasks — show pending and failed (failed tasks need attention)
         all_tasks = load_tasks()
-        pending = [t for t in all_tasks if t.status.value == "pending"]
+        pending = [t for t in all_tasks if t.status.value in ("pending", "failed")]
 
         # Projects
         config = load_global_config()
@@ -631,6 +632,11 @@ class NightShiftApp(App):
         self.query_one(TaskQueuePanel).update_tasks(pending)
         self.query_one(ProjectListPanel).update_projects(projects, task_counts)
         self.query_one(RunHistoryPanel).update_runs(runs)
+
+        # Update task detail for currently selected task
+        selected_task = self.query_one(TaskQueuePanel).get_selected_task()
+        if selected_task:
+            self.query_one(TaskDetailPanel).update_task(selected_task)
 
         # Update detail with latest run if nothing selected
         detail = self.query_one(RunDetailPanel)
@@ -741,6 +747,29 @@ class NightShiftApp(App):
                 self._run_command("nightshift", "run", "--dry-run", "-p", project, label=f"Dry run: {task.title}")
 
         self.push_screen(RunConfirmScreen([task], single=True), callback=_on_result)
+
+    def action_retry_task(self) -> None:
+        """Requeue a failed task back to pending."""
+        task_queue = self.query_one(TaskQueuePanel)
+        task = task_queue.get_selected_task()
+        if not task:
+            self.notify("No task selected", timeout=2)
+            return
+        if task.status.value != "failed":
+            self.notify("Task is not failed", timeout=2)
+            return
+
+        from nightshift.models.task import TaskStatus
+        from nightshift.storage.task_queue import update_task
+
+        update_task(task.id, status=TaskStatus.PENDING)
+        self.notify(f"Requeued: {task.title}", timeout=2)
+        self._poll_data()
+        # Refresh detail panel with updated task
+        from nightshift.storage.task_queue import get_task
+        updated = get_task(task.id)
+        if updated:
+            self.query_one(TaskDetailPanel).update_task(updated)
 
     def action_trigger_sync(self) -> None:
         def _on_confirm(confirmed: bool) -> None:
