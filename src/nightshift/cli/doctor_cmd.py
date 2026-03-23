@@ -67,9 +67,13 @@ def _check_git_push_dry_run() -> tuple[bool, str]:
 
 
 def _check_gpg_signing() -> tuple[bool, str]:
-    """Check if GPG signing is configured and not blocking."""
+    """Check if GPG signing is configured globally.
+
+    NightShift passes ``-c commit.gpgsign=false`` for every git command,
+    so global GPG signing never blocks execution.  This check is purely
+    informational.
+    """
     try:
-        # Check if commit.gpgsign is enabled
         result = subprocess.run(
             ["git", "config", "--global", "commit.gpgsign"],
             capture_output=True,
@@ -78,22 +82,10 @@ def _check_gpg_signing() -> tuple[bool, str]:
         )
         gpg_enabled = result.stdout.strip().lower() == "true"
         if not gpg_enabled:
-            return True, "GPG signing not enabled (OK)"
-
-        # If enabled, check that gpg agent is available
-        gpg_result = subprocess.run(
-            ["gpg", "--list-secret-keys", "--keyid-format=long"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if gpg_result.returncode == 0 and gpg_result.stdout.strip():
-            return True, "GPG signing enabled, keys available"
-        return False, "GPG signing enabled but no secret keys found"
-    except FileNotFoundError:
-        return False, "GPG signing enabled but gpg not found"
+            return True, "GPG signing not enabled"
+        return True, "GPG signing enabled globally, NightShift bypasses it"
     except Exception as exc:
-        return False, str(exc)
+        return True, f"could not check ({exc}), NightShift bypasses GPG anyway"
 
 
 def _check_api_tokens() -> list[tuple[str, bool, str]]:
