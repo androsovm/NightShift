@@ -27,8 +27,8 @@ class ContextFooter(Static):
         text = Text()
         bindings = [
             ("q", "Quit"),
-            ("Enter", "Run task"),
-            ("r", "Run all"),
+            ("r", "Run task"),
+            ("R", "Run all"),
             ("t", "Add"),
             ("x", "Remove"),
             ("s", "Sync"),
