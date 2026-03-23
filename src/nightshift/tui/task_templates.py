@@ -23,20 +23,66 @@ TEMPLATES: list[TaskTemplate] = [
     TaskTemplate(
         key="docs",
         title="Update documentation",
-        description="Bring README, docstrings, and inline comments up to date",
+        description="Detect and fix documentation drift — sync .md files with actual codebase",
         intent=(
-            "Review all documentation in the project — README.md, docstrings, "
-            "and inline comments. Update anything outdated, add missing docstrings "
-            "for public functions, and ensure examples still work."
+            "You are a documentation auditor. Your mission is to detect and fix documentation "
+            "drift — places where .md files have fallen out of sync with the actual codebase. "
+            "You do not write documentation from scratch. You do not rewrite files. You make "
+            "the minimum surgical edits necessary to make existing documentation factually "
+            "accurate again.\n\n"
+            "PHASE 1 — AUDIT (read-only, no edits yet):\n"
+            "Systematically compare documentation against the actual codebase to detect drift. "
+            "For each .md documentation file:\n"
+            "  - Read the doc and identify every factual claim: API endpoints, CLI commands, "
+            "function signatures, config options, installation steps, environment variables, "
+            "dependency versions, architecture descriptions.\n"
+            "  - Verify each claim against source code, config files, and project metadata "
+            "(pyproject.toml, package.json, Makefile, docker-compose.yaml, etc.).\n"
+            "  - Check code examples and command snippets — do they match current signatures, "
+            "arguments, and return types?\n"
+            "  - Check internal links and cross-references — do referenced files and sections exist?\n"
+            "  - Note features, endpoints, or config options that exist in code but are absent "
+            "from docs.\n"
+            "Classify each file: OK (accurate), DRIFT (contradicts code), or STALE (describes "
+            "something removed). Build a complete inventory of discrepancies before editing.\n\n"
+            "PHASE 2 — SURGICAL FIXES (only DRIFT and STALE files):\n"
+            "Fix discrepancies in priority order:\n"
+            "  1. Incorrect information (wrong API signatures, wrong CLI flags, wrong config "
+            "keys, wrong defaults) — these actively mislead readers.\n"
+            "  2. Outdated code examples that would fail if copy-pasted.\n"
+            "  3. Missing documentation for new public features, endpoints, or config options "
+            "already implemented in code.\n"
+            "  4. Broken internal links or cross-references.\n"
+            "  5. Stale version numbers, dependency lists, or compatibility claims.\n"
+            "Process files in priority order: API docs first, then README/getting-started, "
+            "then architecture docs, then config/deployment docs, then everything else.\n"
+            "Skip anything that is merely a style preference or could be improved but is not wrong.\n\n"
+            "PHASE 3 — SELF-REVIEW:\n"
+            "Re-read every file you modified end-to-end. Verify:\n"
+            "  - Every code snippet is syntactically valid and matches the real codebase.\n"
+            "  - No sections were accidentally deleted or reordered.\n"
+            "  - The document still reads coherently — your edits fit the surrounding text.\n"
+            "  - Your edits match the language the document is written in (if docs are in Russian, "
+            "write in Russian; if in English, write in English).\n"
+            "  - Markdown structure is intact (headings, tables, links, fenced code blocks).\n\n"
+            "If the audit finds zero discrepancies, make no changes and commit nothing."
         ),
-        scope=["README.md", "**/*.py docstrings", "inline comments"],
+        scope=["README.md", "docs/**/*.md", "**/*.md"],
         constraints=[
-            "Do not change code logic, only documentation",
-            "Keep existing documentation style",
-            "Do not add excessive boilerplate docstrings",
+            "Only modify .md documentation files — never touch source code, configs, tests, or docstrings",
+            "Never rewrite an entire file or section — make the minimum edit to fix the specific inaccuracy",
+            "Preserve existing tone, style, heading structure, and formatting conventions of each document",
+            "Match the document's natural language — do not translate or switch languages",
+            "Never add speculative documentation — only document what is verifiably implemented in code",
+            "Do not remove documentation for features you cannot find in code — they may be in dependencies or dynamically loaded",
+            "When adding missing features to docs, match the depth and format of neighboring entries",
+            "Do not create new documentation files — only update existing ones",
+            "Do not add badges, emoji, AI attribution comments, or boilerplate that did not already exist",
+            "Every edit must be traceable to a concrete discrepancy between documentation and source code — no cosmetic changes",
+            "If a code example needs updating, verify the new example against actual function signatures before writing it",
         ],
         priority="low",
-        estimated_minutes=20,
+        estimated_minutes=30,
     ),
     TaskTemplate(
         key="tests",

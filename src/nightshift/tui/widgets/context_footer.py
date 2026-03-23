@@ -27,12 +27,11 @@ class ContextFooter(Static):
         text = Text()
         bindings = [
             ("q", "Quit"),
+            ("Enter", "Run task"),
+            ("r", "Run all"),
             ("t", "Add"),
             ("x", "Remove"),
-            ("r", "Run"),
             ("s", "Sync"),
-            ("d", "Doctor"),
-            ("j/k", "Nav"),
             ("?", "Help"),
         ]
         for i, (key, label) in enumerate(bindings):

@@ -55,13 +55,13 @@ class HelpScreen(ModalScreen[None]):
         text.append("  Shift+Tab   Previous panel\n\n", style=f"{GREY}")
 
         text.append("ACTIONS\n", style=f"bold {GREEN}")
+        text.append("  r           Run selected task\n", style=f"{GREY}")
+        text.append("  R           Run all pending tasks\n", style=f"{GREY}")
         text.append("  t           Add built-in task\n", style=f"{GREY}")
         text.append("  m           Change task model\n", style=f"{GREY}")
         text.append("  x           Remove built-in task\n", style=f"{GREY}")
-        text.append("  r           Trigger a run (dry-run)\n", style=f"{GREY}")
         text.append("  s           Sync tasks from sources\n", style=f"{GREY}")
-        text.append("  d           Run doctor check\n", style=f"{GREY}")
-        text.append("  Enter       View run detail\n\n", style=f"{GREY}")
+        text.append("  d           Run doctor check\n\n", style=f"{GREY}")
 
         text.append("GENERAL\n", style=f"bold {RED}")
         text.append("  ?           Toggle this help\n", style=f"{GREY}")
@@ -128,9 +128,9 @@ class AddTaskScreen(ModalScreen[str | None]):
         align: center middle;
     }
     AddTaskScreen > Vertical {
-        width: 70;
+        width: 80;
         height: auto;
-        max-height: 30;
+        max-height: 40;
         border: solid #4C566A;
         background: #2E3440;
         padding: 1 2;
@@ -145,11 +145,11 @@ class AddTaskScreen(ModalScreen[str | None]):
     }
     AddTaskScreen ListView {
         height: auto;
-        max-height: 20;
+        max-height: 30;
         background: #2E3440;
     }
     AddTaskScreen ListView > ListItem.--highlight {
-        background: #4C566A;
+        background: #3B4252;
     }
     """
 
@@ -168,35 +168,67 @@ class AddTaskScreen(ModalScreen[str | None]):
             )
             yield ListView(id="atm-list")
 
+    BINDINGS = [
+        Binding("enter", "select_item", "Select", show=False),
+    ]
+
+    def _focus_list(self) -> None:
+        """Focus the list and ensure first item is highlighted."""
+        lv = self.query_one("#atm-list", ListView)
+        lv.focus()
+        self.call_after_refresh(self._ensure_cursor)
+
+    def _ensure_cursor(self) -> None:
+        lv = self.query_one("#atm-list", ListView)
+        if lv.index is None and len(list(lv.children)) > 0:
+            lv.index = 0
+
+    def action_select_item(self) -> None:
+        """Forward Enter to the ListView's select action."""
+        lv = self.query_one("#atm-list", ListView)
+        if lv.index is not None:
+            lv.action_select_cursor()
+
     def on_mount(self) -> None:
         self._rebuild_template_list()
+        self._focus_list()
+
+    def _get_selected_index(self, event: ListView.Selected) -> int | None:
+        """Get the index of the selected item from its position in the list."""
+        lv = event.list_view
+        children = list(lv.children)
+        try:
+            return children.index(event.item)
+        except ValueError:
+            return None
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         from nightshift.config.loader import load_global_config
         from nightshift.tui.task_templates import TEMPLATES
 
+        idx = self._get_selected_index(event)
+        if idx is None:
+            return
+
         if self._phase == "template":
-            idx = event.list_view.index
-            if idx is not None and 0 <= idx < len(TEMPLATES):
+            if 0 <= idx < len(TEMPLATES):
                 self._selected_template_key = TEMPLATES[idx].key
                 self._show_project_picker()
 
         elif self._phase == "project":
             config = load_global_config()
             projects = config.projects
-            idx = event.list_view.index
 
-            if idx is not None and idx == 0:
+            if idx == 0:
                 self._selected_project_paths = [str(p.path) for p in projects]
-            elif idx is not None and 1 <= idx <= len(projects):
+            elif 1 <= idx <= len(projects):
                 self._selected_project_paths = [str(projects[idx - 1].path)]
             else:
                 return
             self._show_model_picker()
 
         elif self._phase == "model":
-            idx = event.list_view.index
-            if idx is not None and 0 <= idx < len(CLAUDE_MODELS):
+            if 0 <= idx < len(CLAUDE_MODELS):
                 model = CLAUDE_MODELS[idx]
                 self._add_tasks_for_projects(self._selected_project_paths, model=model)
 
@@ -236,6 +268,8 @@ class AddTaskScreen(ModalScreen[str | None]):
             row.append(f"  {path_str}", style=f"{GREY}")
             lv.mount(ListItem(Label(row)))
 
+        self._focus_list()
+
     def _show_model_picker(self) -> None:
         """Replace list contents with model selection."""
         from rich.text import Text
@@ -259,6 +293,8 @@ class AddTaskScreen(ModalScreen[str | None]):
             else:
                 row.append(f"  {m}", style=f"{CYAN}")
             lv.mount(ListItem(Label(row)))
+
+        self._focus_list()
 
     def _add_tasks_for_projects(self, project_paths: list[str], *, model: str | None = None) -> None:
         """Create QueuedTasks and save them."""
@@ -332,9 +368,12 @@ class AddTaskScreen(ModalScreen[str | None]):
         lv.clear()
         for tmpl in TEMPLATES:
             row = Text()
-            row.append(f"  {tmpl.key:<12}", style=f"bold {CYAN}")
-            row.append(f"{tmpl.description}", style=f"{GREY}")
+            row.append(f"  {tmpl.key}", style=f"bold {CYAN}")
+            row.append(f"  {tmpl.title}\n", style="default")
+            row.append(f"    {tmpl.description}", style=f"{GREY}")
             lv.mount(ListItem(Label(row)))
+
+        self._focus_list()
 
 
 class ModelPickerScreen(ModalScreen[str | None]):
@@ -362,7 +401,7 @@ class ModelPickerScreen(ModalScreen[str | None]):
         background: #2E3440;
     }
     ModelPickerScreen ListView > ListItem.--highlight {
-        background: #4C566A;
+        background: #3B4252;
     }
     """
 
@@ -393,9 +432,30 @@ class ModelPickerScreen(ModalScreen[str | None]):
                 row.append(f"  {m}", style=f"{CYAN}")
             lv.mount(ListItem(Label(row)))
 
+        lv.focus()
+        self.call_after_refresh(self._ensure_cursor)
+
+    def _ensure_cursor(self) -> None:
+        lv = self.query_one("#mp-list", ListView)
+        if lv.index is None and len(list(lv.children)) > 0:
+            lv.index = 0
+
+    BINDINGS = [
+        Binding("enter", "select_item", "Select", show=False),
+    ]
+
+    def action_select_item(self) -> None:
+        lv = self.query_one("#mp-list", ListView)
+        if lv.index is not None:
+            lv.action_select_cursor()
+
     def on_list_view_selected(self, event: ListView.Selected) -> None:
-        idx = event.list_view.index
-        if idx is not None and 0 <= idx < len(CLAUDE_MODELS):
+        children = list(event.list_view.children)
+        try:
+            idx = children.index(event.item)
+        except ValueError:
+            return
+        if 0 <= idx < len(CLAUDE_MODELS):
             selected = CLAUDE_MODELS[idx]
             if selected != self._current_model:
                 from nightshift.storage.task_queue import update_task
@@ -407,6 +467,87 @@ class ModelPickerScreen(ModalScreen[str | None]):
 
     def on_key(self, event: Key) -> None:
         if event.key == "escape":
+            self.dismiss(None)
+            event.prevent_default()
+
+
+class RunConfirmScreen(ModalScreen[str | None]):
+    """Confirmation screen before running tasks. Shows task list and run mode."""
+
+    DEFAULT_CSS = """
+    RunConfirmScreen {
+        align: center middle;
+    }
+    RunConfirmScreen > Vertical {
+        width: 75;
+        height: auto;
+        max-height: 35;
+        border: solid #4C566A;
+        background: #2E3440;
+        padding: 1 2;
+    }
+    RunConfirmScreen .rc-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    RunConfirmScreen .rc-tasks {
+        margin-bottom: 1;
+        max-height: 15;
+    }
+    RunConfirmScreen .rc-footer {
+        color: #616E88;
+    }
+    """
+
+    def __init__(self, tasks: list, *, single: bool = False) -> None:
+        super().__init__()
+        self._tasks = tasks
+        self._single = single
+
+    def compose(self) -> ComposeResult:
+        from rich.text import Text
+
+        with Vertical():
+            if self._single:
+                title = f"Run 1 task"
+            else:
+                title = f"Run all {len(self._tasks)} pending tasks"
+            yield Label(title, classes="rc-title")
+
+            # Task list preview
+            task_text = Text()
+            for task in self._tasks[:15]:
+                project_name = Path(task.project_path).name
+                task_text.append(f"  {task.priority.value[0].upper()} ", style=f"{GREY}")
+                task_text.append(f"{task.title[:45]}", style=f"{CYAN}")
+                task_text.append(f"  {project_name}", style=f"{GREY}")
+                if task.model:
+                    task_text.append(f"  [{task.model}]", style=f"{DIM}")
+                task_text.append("\n")
+            if len(self._tasks) > 15:
+                task_text.append(f"  ... and {len(self._tasks) - 15} more\n", style=f"{GREY}")
+
+            yield Label(task_text, classes="rc-tasks")
+
+            footer = Text()
+            footer.append("[enter] ", style=f"bold {GREEN}")
+            footer.append("Run now", style=f"{GREEN}")
+            footer.append("    ", style="default")
+            footer.append("[d] ", style=f"bold {YELLOW}")
+            footer.append("Dry run", style=f"{YELLOW}")
+            footer.append("    ", style="default")
+            footer.append("[esc] ", style=f"bold {GREY}")
+            footer.append("Cancel", style=f"{GREY}")
+            yield Label(footer, classes="rc-footer")
+
+    def on_key(self, event: Key) -> None:
+        if event.key == "enter":
+            self.dismiss("live")
+            event.prevent_default()
+        elif event.key == "d":
+            self.dismiss("dry")
+            event.prevent_default()
+        elif event.key == "escape":
             self.dismiss(None)
             event.prevent_default()
 
@@ -423,7 +564,8 @@ class NightShiftApp(App):
         Binding("t", "add_task", "Add task", show=False),
         Binding("m", "change_model", "Change model", show=False),
         Binding("x", "remove_task", "Remove task", show=False),
-        Binding("r", "trigger_run", "Run", show=False),
+        Binding("r", "run_selected", "Run task", show=False),
+        Binding("R", "run_all", "Run all", show=False),
         Binding("s", "trigger_sync", "Sync", show=False),
         Binding("d", "trigger_doctor", "Doctor", show=False),
     ]
@@ -565,14 +707,43 @@ class NightShiftApp(App):
             ConfirmScreen(f"Remove \"{task.title}\"?"), callback=_on_confirm
         )
 
-    def action_trigger_run(self) -> None:
-        def _on_confirm(confirmed: bool) -> None:
-            if confirmed:
+    def action_run_all(self) -> None:
+        """Run all pending tasks with confirmation."""
+        from nightshift.storage.task_queue import load_tasks
+
+        all_tasks = load_tasks()
+        pending = [t for t in all_tasks if t.status.value == "pending"]
+
+        if not pending:
+            self.notify("No pending tasks", timeout=2)
+            return
+
+        def _on_result(mode: str | None) -> None:
+            if mode == "live":
+                self.notify("Running all tasks...", timeout=3)
+                self._run_command("nightshift", "run")
+            elif mode == "dry":
+                self.notify("Dry run...", timeout=3)
                 self._run_command("nightshift", "run", "--dry-run")
 
-        self.push_screen(
-            ConfirmScreen("Start a dry run?"), callback=_on_confirm
-        )
+        self.push_screen(RunConfirmScreen(pending), callback=_on_result)
+
+    def action_run_selected(self) -> None:
+        """Run the selected task with confirmation."""
+        task_queue = self.query_one(TaskQueuePanel)
+        task = task_queue.get_selected_task()
+        if not task:
+            return
+
+        def _on_result(mode: str | None) -> None:
+            if mode == "live":
+                self.notify(f"Running: {task.title}...", timeout=3)
+                self._run_command("nightshift", "run", "-p", Path(task.project_path).name)
+            elif mode == "dry":
+                self.notify(f"Dry run: {task.title}...", timeout=3)
+                self._run_command("nightshift", "run", "--dry-run", "-p", Path(task.project_path).name)
+
+        self.push_screen(RunConfirmScreen([task], single=True), callback=_on_result)
 
     def action_trigger_sync(self) -> None:
         def _on_confirm(confirmed: bool) -> None:

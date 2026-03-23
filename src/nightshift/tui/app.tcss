@@ -70,7 +70,7 @@ Screen {
 }
 
 #task-queue-panel ListView > ListItem.--highlight {
-    background: #4C566A;
+    background: #3B4252;
 }
 
 /* -- Projects panel -- */
@@ -105,7 +105,7 @@ Screen {
 }
 
 #run-history-panel ListView > ListItem.--highlight {
-    background: #4C566A;
+    background: #3B4252;
 }
 
 /* -- Empty state -- */
