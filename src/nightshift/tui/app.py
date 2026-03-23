@@ -12,7 +12,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, Label, ListItem, ListView, Static
 
 from nightshift.models.config import CLAUDE_MODELS, DEFAULT_CLAUDE_MODEL
-from nightshift.tui.constants import CYAN, DIM, GREEN, GREY, POLL_INTERVAL, RED, YELLOW
+from nightshift.tui.constants import CYAN, DIM, GREEN, GREY, PINK, POLL_INTERVAL, RED, YELLOW
 from nightshift.tui.widgets.context_footer import ContextFooter
 from nightshift.tui.widgets.header_bar import HeaderBar
 from nightshift.tui.widgets.project_list import ProjectListPanel
@@ -265,7 +265,7 @@ class AddTaskScreen(ModalScreen[str | None]):
             row = Text()
             row.append(f"  {ref.path.name}", style=f"{CYAN}")
             path_str = str(ref.path).replace(str(ref.path.home()), "~")
-            row.append(f"  {path_str}", style=f"{GREY}")
+            row.append(f"  {path_str}", style=f"{PINK}")
             lv.mount(ListItem(Label(row)))
 
         self._focus_list()
@@ -370,7 +370,7 @@ class AddTaskScreen(ModalScreen[str | None]):
             row = Text()
             row.append(f"  {tmpl.key}", style=f"bold {CYAN}")
             row.append(f"  {tmpl.title}\n", style="default")
-            row.append(f"    {tmpl.description}", style=f"{GREY}")
+            row.append(f"    {tmpl.description}", style=f"{PINK}")
             lv.mount(ListItem(Label(row)))
 
         self._focus_list()
@@ -520,7 +520,7 @@ class RunConfirmScreen(ModalScreen[str | None]):
                 project_name = Path(task.project_path).name
                 task_text.append(f"  {task.priority.value[0].upper()} ", style=f"{GREY}")
                 task_text.append(f"{task.title[:45]}", style=f"{CYAN}")
-                task_text.append(f"  {project_name}", style=f"{GREY}")
+                task_text.append(f"  {project_name}", style=f"{PINK}")
                 if task.model:
                     task_text.append(f"  [{task.model}]", style=f"{DIM}")
                 task_text.append("\n")

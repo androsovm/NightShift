@@ -83,7 +83,7 @@ def list_tasks(
         "done": "[dim]done[/dim]",
     }
     priority_styles = {
-        "high": "[red]high[/red]",
+        "high": "[yellow]high[/yellow]",
         "medium": "[yellow]medium[/yellow]",
         "low": "[dim]low[/dim]",
     }

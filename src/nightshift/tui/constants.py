@@ -32,8 +32,8 @@ ACCENT = THEME["accent"]
 
 # Task priority display: symbol, color
 PRIORITY_DISPLAY: dict[TaskPriority, tuple[str, str]] = {
-    TaskPriority.HIGH: ("●", RED),
-    TaskPriority.MEDIUM: ("○", YELLOW),
+    TaskPriority.HIGH: ("●", YELLOW),
+    TaskPriority.MEDIUM: ("○", CYAN),
     TaskPriority.LOW: ("·", GREY),
 }
 

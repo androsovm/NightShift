@@ -8,7 +8,7 @@ from rich.text import Text
 from textual.widgets import Label, ListItem, ListView, Static
 
 from nightshift.models.task import QueuedTask, TaskStatus
-from nightshift.tui.constants import CYAN, GREEN, GREY, RED, YELLOW, PRIORITY_DISPLAY
+from nightshift.tui.constants import CYAN, GREEN, GREY, PINK, RED, YELLOW, PRIORITY_DISPLAY
 
 
 class TaskQueuePanel(Static):
@@ -85,7 +85,7 @@ class TaskQueuePanel(Static):
                 text.append(task.title[:50], style=f"{title_color}")
                 text.append("  ", style="default")
                 project_name = Path(task.project_path).name
-                text.append(project_name, style=f"{GREY}")
+                text.append(project_name, style=f"{PINK}")
 
                 new_items.append(ListItem(Label(text)))
 
