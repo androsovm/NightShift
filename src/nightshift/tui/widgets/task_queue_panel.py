@@ -7,8 +7,8 @@ from pathlib import Path
 from rich.text import Text
 from textual.widgets import Label, ListItem, ListView, Static
 
-from nightshift.models.task import QueuedTask
-from nightshift.tui.constants import CYAN, GREY, PRIORITY_DISPLAY
+from nightshift.models.task import QueuedTask, TaskStatus
+from nightshift.tui.constants import CYAN, GREEN, GREY, RED, YELLOW, PRIORITY_DISPLAY
 
 
 class TaskQueuePanel(Static):
@@ -66,13 +66,23 @@ class TaskQueuePanel(Static):
 
         for task in tasks:
             text = Text()
-            priority_symbol, priority_color = PRIORITY_DISPLAY.get(
-                task.priority, ("·", GREY)
-            )
-            text.append(f" {priority_symbol} ", style=f"{priority_color}")
-            text.append(f"[{task.priority.value}]", style=f"{priority_color}")
+            is_failed = task.status == TaskStatus.FAILED
+            is_running = task.status == TaskStatus.RUNNING
+            if is_running:
+                text.append(" >>> ", style=f"bold {GREEN}")
+                text.append("[running]", style=f"{GREEN}")
+            elif is_failed:
+                text.append(" ✗ ", style=f"{RED}")
+                text.append("[failed]", style=f"{RED}")
+            else:
+                priority_symbol, priority_color = PRIORITY_DISPLAY.get(
+                    task.priority, ("·", GREY)
+                )
+                text.append(f" {priority_symbol} ", style=f"{priority_color}")
+                text.append(f"[{task.priority.value}]", style=f"{priority_color}")
             text.append("  ", style="default")
-            text.append(task.title[:50], style=f"{CYAN}")
+            title_color = GREEN if is_running else RED if is_failed else CYAN
+            text.append(task.title[:50], style=f"{title_color}")
             text.append("  ", style="default")
             project_name = Path(task.project_path).name
             text.append(project_name, style=f"{GREY}")

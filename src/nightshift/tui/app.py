@@ -593,9 +593,9 @@ class NightShiftApp(App):
         from nightshift.storage.store import load_latest_run, load_runs
         from nightshift.storage.task_queue import get_pending_tasks, load_tasks
 
-        # Tasks — show pending and failed (failed tasks need attention)
+        # Tasks — show pending, running, and failed (active tasks need attention)
         all_tasks = load_tasks()
-        pending = [t for t in all_tasks if t.status.value in ("pending", "failed")]
+        pending = [t for t in all_tasks if t.status.value in ("pending", "running", "failed")]
 
         # Projects
         config = load_global_config()
@@ -726,6 +726,7 @@ class NightShiftApp(App):
 
         def _on_result(mode: str | None) -> None:
             if mode == "live":
+                self._mark_tasks_running([t.id for t in pending])
                 self._run_command("nightshift", "run", label=f"Running {len(pending)} tasks")
             elif mode == "dry":
                 self._run_command("nightshift", "run", "--dry-run", label=f"Dry run ({len(pending)} tasks)")
@@ -742,6 +743,7 @@ class NightShiftApp(App):
         def _on_result(mode: str | None) -> None:
             project = Path(task.project_path).name
             if mode == "live":
+                self._mark_tasks_running([task.id])
                 self._run_command("nightshift", "run", "-p", project, label=f"Running: {task.title}")
             elif mode == "dry":
                 self._run_command("nightshift", "run", "--dry-run", "-p", project, label=f"Dry run: {task.title}")
@@ -790,6 +792,14 @@ class NightShiftApp(App):
         )
 
     _run_label: str = ""
+
+    def _mark_tasks_running(self, task_ids: list[str]) -> None:
+        """Set task status to running immediately for UI feedback."""
+        from nightshift.models.task import TaskStatus
+        from nightshift.storage.task_queue import update_task
+
+        for task_id in task_ids:
+            update_task(task_id, status=TaskStatus.RUNNING)
 
     def _run_command(self, *args: str, label: str = "Running...") -> None:
         """Run a CLI command in background with live feedback."""
