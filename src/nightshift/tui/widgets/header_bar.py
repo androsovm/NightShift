@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from rich.text import Text
 from textual.widgets import Static
 
-from nightshift.tui.constants import CYAN, DIM, GREEN, GREY, RED, YELLOW
+from nightshift.tui.constants import BRAILLE_SPINNER, CYAN, DIM, GREEN, GREY, RED, YELLOW
 
 
 class HeaderBar(Static):
@@ -31,6 +31,8 @@ class HeaderBar(Static):
         self._project_count = 0
         self._schedule_time: str = ""
         self._schedule_tz: str = ""
+        self._running_label: str = ""
+        self._spinner_frame: int = 0
 
     def update_data(
         self,
@@ -51,6 +53,15 @@ class HeaderBar(Static):
         self._schedule_time = schedule_time
         self._schedule_tz = schedule_tz
         # Don't render here — countdown timer handles it
+
+    def set_running(self, label: str) -> None:
+        """Show a running indicator in the header."""
+        self._running_label = label
+        self._spinner_frame = 0
+
+    def set_idle(self) -> None:
+        """Clear the running indicator."""
+        self._running_label = ""
 
     def on_mount(self) -> None:
         self._render_header()
@@ -92,11 +103,19 @@ class HeaderBar(Static):
         text.append("  NIGHTSHIFT", style=f"bold {GREEN}")
         text.append("   ", style="default")
 
-        # Countdown
-        countdown = self._compute_countdown()
-        if countdown:
-            text.append(f"next run in {countdown}", style=f"{YELLOW}")
+        # Running indicator
+        if self._running_label:
+            spinner = BRAILLE_SPINNER[self._spinner_frame % len(BRAILLE_SPINNER)]
+            self._spinner_frame += 1
+            text.append(f"{spinner} ", style=f"bold {YELLOW}")
+            text.append(f"{self._running_label}", style=f"{YELLOW}")
             text.append("   ", style="default")
+        else:
+            # Countdown (only when idle)
+            countdown = self._compute_countdown()
+            if countdown:
+                text.append(f"next run in {countdown}", style=f"{YELLOW}")
+                text.append("   ", style="default")
 
         text.append(f"{self._pending_count} pending", style=f"{CYAN}")
         text.append("  ", style="default")

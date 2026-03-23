@@ -6,7 +6,7 @@ from rich.text import Text
 from textual.widgets import Label, ListItem, ListView, Static
 
 from nightshift.models.run import RunResult
-from nightshift.tui.constants import GREEN, GREY, RED, SPARKLINE_CHARS, YELLOW
+from nightshift.tui.constants import BRAILLE_SPINNER, CYAN, GREEN, GREY, RED, SPARKLINE_CHARS, YELLOW
 
 
 def _format_duration(seconds: float) -> str:
@@ -39,6 +39,9 @@ class RunHistoryPanel(Static):
         self._list_view: ListView | None = None
         self._runs: list[RunResult] = []
         self._fingerprint: str = ""
+        self._running_label: str = ""
+        self._spinner_frame: int = 0
+        self._running_item: ListItem | None = None
 
     def compose(self):
         self._list_view = ListView()
@@ -47,6 +50,45 @@ class RunHistoryPanel(Static):
     def on_mount(self) -> None:
         self.border_title = "RUN HISTORY"
         self.add_class("panel")
+        self.set_interval(0.25, self._tick_spinner)
+
+    def set_running(self, label: str) -> None:
+        """Show a running entry at the top of the list."""
+        self._running_label = label
+        self._spinner_frame = 0
+        self._update_running_item()
+
+    def set_idle(self) -> None:
+        """Remove the running entry."""
+        self._running_label = ""
+        if self._running_item and self._list_view:
+            self._running_item.remove()
+            self._running_item = None
+
+    def _tick_spinner(self) -> None:
+        """Animate the spinner on the running entry."""
+        if not self._running_label or not self._running_item:
+            return
+        self._spinner_frame += 1
+        spinner = BRAILLE_SPINNER[self._spinner_frame % len(BRAILLE_SPINNER)]
+        row = Text()
+        row.append(f"  {spinner} ", style=f"bold {YELLOW}")
+        row.append(f"{self._running_label}", style=f"{CYAN}")
+        self._running_item.query_one(Label).update(row)
+
+    def _update_running_item(self) -> None:
+        """Insert or update the running entry at the top."""
+        if not self._list_view or not self._running_label:
+            return
+        spinner = BRAILLE_SPINNER[0]
+        row = Text()
+        row.append(f"  {spinner} ", style=f"bold {YELLOW}")
+        row.append(f"{self._running_label}", style=f"{CYAN}")
+        if self._running_item:
+            self._running_item.query_one(Label).update(row)
+        else:
+            self._running_item = ListItem(Label(row))
+            self._list_view.mount(self._running_item, before=0)
 
     @staticmethod
     def _make_fingerprint(runs: list[RunResult]) -> str:
@@ -62,6 +104,11 @@ class RunHistoryPanel(Static):
         if self._list_view is None:
             return
         self._list_view.clear()
+        self._running_item = None  # cleared by lv.clear()
+
+        # Re-insert running indicator if active
+        if self._running_label:
+            self._update_running_item()
 
         if not runs:
             self._list_view.mount(

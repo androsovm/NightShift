@@ -720,11 +720,9 @@ class NightShiftApp(App):
 
         def _on_result(mode: str | None) -> None:
             if mode == "live":
-                self.notify("Running all tasks...", timeout=3)
-                self._run_command("nightshift", "run")
+                self._run_command("nightshift", "run", label=f"Running {len(pending)} tasks")
             elif mode == "dry":
-                self.notify("Dry run...", timeout=3)
-                self._run_command("nightshift", "run", "--dry-run")
+                self._run_command("nightshift", "run", "--dry-run", label=f"Dry run ({len(pending)} tasks)")
 
         self.push_screen(RunConfirmScreen(pending), callback=_on_result)
 
@@ -736,19 +734,18 @@ class NightShiftApp(App):
             return
 
         def _on_result(mode: str | None) -> None:
+            project = Path(task.project_path).name
             if mode == "live":
-                self.notify(f"Running: {task.title}...", timeout=3)
-                self._run_command("nightshift", "run", "-p", Path(task.project_path).name)
+                self._run_command("nightshift", "run", "-p", project, label=f"Running: {task.title}")
             elif mode == "dry":
-                self.notify(f"Dry run: {task.title}...", timeout=3)
-                self._run_command("nightshift", "run", "--dry-run", "-p", Path(task.project_path).name)
+                self._run_command("nightshift", "run", "--dry-run", "-p", project, label=f"Dry run: {task.title}")
 
         self.push_screen(RunConfirmScreen([task], single=True), callback=_on_result)
 
     def action_trigger_sync(self) -> None:
         def _on_confirm(confirmed: bool) -> None:
             if confirmed:
-                self._run_command("nightshift", "sync")
+                self._run_command("nightshift", "sync", label="Syncing tasks")
 
         self.push_screen(
             ConfirmScreen("Sync tasks from all sources?"), callback=_on_confirm
@@ -757,25 +754,58 @@ class NightShiftApp(App):
     def action_trigger_doctor(self) -> None:
         def _on_confirm(confirmed: bool) -> None:
             if confirmed:
-                self._run_command("nightshift", "doctor")
+                self._run_command("nightshift", "doctor", label="Doctor check")
 
         self.push_screen(
             ConfirmScreen("Run environment health check?"), callback=_on_confirm
         )
 
-    def _run_command(self, *args: str) -> None:
-        """Run a CLI command in background and refresh data after."""
+    _run_label: str = ""
+
+    def _run_command(self, *args: str, label: str = "Running...") -> None:
+        """Run a CLI command in background with live feedback."""
         import subprocess
 
-        try:
-            subprocess.Popen(
-                args,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except FileNotFoundError:
-            pass
-        # Data will refresh on next poll cycle
+        self._run_label = label
+        self.query_one(HeaderBar).set_running(label)
+        self.query_one(RunHistoryPanel).set_running(label)
+        self._poll_data()
+
+        def _work() -> int:
+            try:
+                proc = subprocess.run(
+                    args,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return proc.returncode
+            except FileNotFoundError:
+                return -1
+
+        self.run_worker(_work, name="nightshift-run", group="run", thread=True, exclusive=True, exit_on_error=False)
+
+    def on_worker_state_changed(self, event) -> None:
+        """Handle worker completion — update header and show result."""
+        from textual.worker import WorkerState
+
+        if event.worker.name != "nightshift-run":
+            return
+        if event.state in (WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED):
+            self.query_one(HeaderBar).set_idle()
+            self.query_one(RunHistoryPanel).set_idle()
+            self._poll_data()
+
+            label = self._run_label
+            self._run_label = ""
+
+            if event.state == WorkerState.SUCCESS:
+                returncode = event.worker.result
+                if returncode == 0:
+                    self.notify(f"Done: {label}", timeout=3)
+                else:
+                    self.notify(f"Failed: {label} (exit {returncode})", severity="error", timeout=5)
+            elif event.state == WorkerState.ERROR:
+                self.notify(f"Error: {label}", severity="error", timeout=5)
 
 
 def run_dashboard() -> None:
