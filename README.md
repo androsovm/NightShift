@@ -6,7 +6,7 @@ I wanted Claude Code to just... do them. While I sleep. The machine is on anyway
 
 NightShift pulls tasks from your issue tracker (GitHub Issues, YouTrack, Trello, or just a YAML file), feeds them to [Claude Code](https://docs.anthropic.com/en/docs/claude-code) one by one, runs quality gates on the result, and opens draft PRs. You wake up, review the PRs over coffee, merge the good ones.
 
-That's it. You sleep, Claude works.
+That's it. You sleep, robots work.
 
 ```
 nightshift
@@ -37,7 +37,7 @@ nightshift
 
 ## How it works
 
-1. You label issues in GitHub/YouTrack/Trello with `nightshift` (or write tasks in YAML)
+1. You label issues in GitHub/YouTrack/Trello with any tag you choose (or write tasks in YAML)
 2. `nightshift sync` pulls them into a local queue
 3. At 3 AM (or whenever you set it), NightShift wakes up and for each task:
    - creates a branch
