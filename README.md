@@ -1,6 +1,12 @@
 # NightShift
 
-CLI tool that runs [Claude Code](https://docs.anthropic.com/en/docs/claude-code) overnight to automatically close tech debt. While you sleep, NightShift picks tasks from your queue, runs Claude Code in isolated sessions, validates changes through quality gates, and opens draft PRs for your review.
+Every backlog has that pile of tasks nobody gets to. Missing tests, stale docs, TODO comments from 2024, a small feature that's been "next sprint" for three months. Important enough to track, never urgent enough to do.
+
+I wanted Claude Code to just... do them. While I sleep. The machine is on anyway -- why should Claude sit idle all night?
+
+NightShift pulls tasks from your issue tracker (GitHub Issues, YouTrack, Trello, or just a YAML file), feeds them to [Claude Code](https://docs.anthropic.com/en/docs/claude-code) one by one, runs quality gates on the result, and opens draft PRs. You wake up, review the PRs over coffee, merge the good ones.
+
+That's it. You sleep, Claude works.
 
 ```
 nightshift
@@ -29,16 +35,19 @@ nightshift
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-## Features
+## How it works
 
-- **TUI dashboard** -- real-time overview with Nord Aurora theme, countdown to next run, task/run detail panels
-- **Interactive setup wizard** -- step-by-step `nightshift init` with back navigation, validation, local timezone detection
-- **Built-in task templates** -- docs, tests, types, lint, todos, dead-code, deps, security, refactor -- add with `[t]` in TUI
-- **Multiple task sources** -- YAML files, GitHub Issues, YouTrack, Trello (extensible via plugins)
-- **Quality gates** -- blast radius checks, linter auto-detection, test regression detection
-- **Safe by design** -- draft PRs only, never force-pushes, never touches main
-- **Scheduling** -- launchd (macOS) / systemd (Linux) integration
-- **Model selection** -- choose Claude model per task (Sonnet, Opus, Haiku)
+1. You label issues in GitHub/YouTrack/Trello with `nightshift` (or write tasks in YAML)
+2. `nightshift sync` pulls them into a local queue
+3. At 3 AM (or whenever you set it), NightShift wakes up and for each task:
+   - creates a branch
+   - runs baseline tests
+   - hands the task to Claude Code
+   - checks the result against quality gates (blast radius, linter, test regression)
+   - opens a draft PR if everything passes
+4. You review the PRs in the morning
+
+Every change goes through quality gates before a PR is created. If Claude breaks tests or touches too many files -- the task fails, no PR is opened, you see the details in the dashboard.
 
 ## Installation
 
@@ -61,40 +70,23 @@ uv sync --extra dev
 ## Quick Start
 
 ```bash
-# Interactive setup wizard (5 steps with back navigation)
-nightshift init
-
-# Verify environment
-nightshift doctor
-
-# Open TUI dashboard
-nightshift
-
-# Or run directly
-nightshift run --dry-run   # preview
-nightshift run             # execute
+nightshift init          # interactive setup wizard
+nightshift doctor        # verify environment
+nightshift               # open TUI dashboard
+nightshift run --dry-run # preview what would happen
+nightshift run           # let it rip
 ```
 
-### Setup Wizard
-
-`nightshift init` walks you through 5 steps:
-
-1. **Select projects** -- scans `~/Projects` for git repos, add custom paths
-2. **Configure sources** -- YAML, GitHub Issues, YouTrack, or Trello per project
-3. **Safety limits** -- max tasks, timeout, file/line limits
-4. **API tokens** -- with links to where to create them, skippable
-5. **Schedule** -- auto-detects your timezone, configurable run time
-
-You can go back at any step.
+The setup wizard walks you through 5 steps: pick your projects, configure task sources, set safety limits, add API tokens, choose a schedule. You can go back at any step.
 
 ## TUI Dashboard
 
-Run `nightshift` with no arguments to launch the dashboard:
+Run `nightshift` with no arguments. Everything is a keystroke away:
 
 | Key | Action |
 |-----|--------|
-| `t` | Add built-in task (docs, tests, lint, etc.) |
-| `x` | Remove built-in task |
+| `t` | Add a built-in task (docs, tests, lint, etc.) |
+| `x` | Remove a task |
 | `m` | Change model for selected task |
 | `r` | Trigger a dry run |
 | `s` | Sync tasks from sources |
@@ -104,9 +96,9 @@ Run `nightshift` with no arguments to launch the dashboard:
 | `?` | Help |
 | `q` | Quit |
 
-### Built-in Task Templates
+### Built-in Task Templates (WIP)
 
-Press `[t]` in the TUI to add maintenance tasks:
+Don't want to write tasks from scratch? Press `[t]` in the TUI -- there are templates for the most common maintenance work. Still a work in progress, more templates coming:
 
 | Template | What it does |
 |----------|-------------|
@@ -162,9 +154,9 @@ tasks:
     priority: medium
 ```
 
-### Task example: adding a feature
+### Writing a good task
 
-A task with all fields filled in -- Claude gets a focused assignment with clear boundaries:
+The more context you give Claude, the better the result. Here's a task with all the fields:
 
 ```yaml
 tasks:
@@ -186,6 +178,10 @@ tasks:
       - Version must be read at import time, not on every request
 ```
 
+- **intent** -- what to do and why. Be specific.
+- **scope** -- which files Claude should focus on. Keeps changes contained.
+- **constraints** -- what NOT to do. Surprisingly important for good results.
+
 ### Secrets (`~/.nightshift/.env`)
 
 API tokens stored with `chmod 600`:
@@ -206,6 +202,15 @@ TRELLO_TOKEN=...
 | YouTrack | tag: `nightshift` | Removes tag + posts comment |
 | Trello | list: "NightShift Queue" | Moves card to "Done" |
 | Built-in | Added via TUI `[t]` | Removed from queue |
+
+## Safety
+
+NightShift is paranoid by design:
+
+- **Draft PRs only** -- never pushes to main, never merges anything. You always have the final say.
+- **Quality gates** -- blast radius limits (max files/lines changed), linter checks, test regression detection. If anything looks off, the task fails and no PR is created.
+- **Claude Code runs with `--dangerously-skip-permissions`** -- required for unattended operation. Only run on repositories you trust.
+- **Tokens** stored in `~/.nightshift/.env` with `chmod 600`. Never logged, never committed.
 
 ## CLI Commands
 
@@ -267,20 +272,13 @@ For NightShift to run on schedule, the machine must stay awake overnight.
 
 `nightshift doctor` will warn if sleep prevention is not configured.
 
-## Security
-
-- **Claude Code runs with `--dangerously-skip-permissions`** -- required for unattended operation. Only run on repositories you trust. Always review draft PRs before merging.
-- **Draft PRs only** -- never pushes to main or merges anything.
-- **API tokens** stored in `~/.nightshift/.env` with `chmod 600`. Never logged or committed.
-- **Blast radius limits** prevent runaway changes -- configurable caps on files and lines per task.
-
 ## Development
 
 ```bash
 git clone https://github.com/androsovm/NightShift.git
 cd NightShift
 uv sync --extra dev
-uv run pytest          # 206 tests
+uv run pytest          # 216 tests
 ```
 
 ## License

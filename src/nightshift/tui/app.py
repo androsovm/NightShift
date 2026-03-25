@@ -369,7 +369,10 @@ class AddTaskScreen(ModalScreen[str | None]):
         for tmpl in TEMPLATES:
             row = Text()
             row.append(f"  {tmpl.key}", style=f"bold {CYAN}")
-            row.append(f"  {tmpl.title}\n", style="default")
+            row.append(f"  {tmpl.title}", style="default")
+            if tmpl.wip:
+                row.append("  [wip]", style="bold yellow")
+            row.append("\n")
             row.append(f"    {tmpl.description}", style=f"{PINK}")
             lv.mount(ListItem(Label(row)))
 

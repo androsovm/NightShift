@@ -17,6 +17,7 @@ class TaskTemplate:
     constraints: list[str]
     priority: str  # high / medium / low
     estimated_minutes: int
+    wip: bool = False
 
 
 TEMPLATES: list[TaskTemplate] = [
@@ -110,6 +111,7 @@ TEMPLATES: list[TaskTemplate] = [
         ],
         priority="medium",
         estimated_minutes=30,
+        wip=True,
     ),
     TaskTemplate(
         key="types",
@@ -128,6 +130,7 @@ TEMPLATES: list[TaskTemplate] = [
         ],
         priority="low",
         estimated_minutes=20,
+        wip=True,
     ),
     TaskTemplate(
         key="lint",
@@ -146,6 +149,7 @@ TEMPLATES: list[TaskTemplate] = [
         ],
         priority="low",
         estimated_minutes=15,
+        wip=True,
     ),
     TaskTemplate(
         key="todos",
@@ -164,6 +168,7 @@ TEMPLATES: list[TaskTemplate] = [
         ],
         priority="medium",
         estimated_minutes=25,
+        wip=True,
     ),
     TaskTemplate(
         key="dead-code",
@@ -182,6 +187,7 @@ TEMPLATES: list[TaskTemplate] = [
         ],
         priority="low",
         estimated_minutes=15,
+        wip=True,
     ),
     TaskTemplate(
         key="deps",
@@ -200,6 +206,7 @@ TEMPLATES: list[TaskTemplate] = [
         ],
         priority="low",
         estimated_minutes=15,
+        wip=True,
     ),
     TaskTemplate(
         key="security",
@@ -218,6 +225,7 @@ TEMPLATES: list[TaskTemplate] = [
         ],
         priority="high",
         estimated_minutes=30,
+        wip=True,
     ),
     TaskTemplate(
         key="refactor",
@@ -236,6 +244,7 @@ TEMPLATES: list[TaskTemplate] = [
         ],
         priority="medium",
         estimated_minutes=30,
+        wip=True,
     ),
 ]
 
