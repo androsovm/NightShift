@@ -206,7 +206,7 @@ class TestRunnerRecordsAttempts:
             patch("nightshift.executor.runner.run_all_gates", return_value=(True, "All gates passed")),
             patch("nightshift.executor.runner.push_branch"),
             patch("nightshift.executor.runner.create_pr", return_value=("https://github.com/pr/1", 1)),
-            patch("nightshift.executor.git_ops._run"),
+            patch("nightshift.executor.git_ops.run_cmd"),
         ):
             run_result = await execute_run(global_config, project_path=tmp_path)
 
@@ -254,7 +254,7 @@ class TestRunnerRecordsAttempts:
             patch("nightshift.executor.runner.build_prompt", return_value="prompt"),
             patch("nightshift.executor.runner.invoke_claude", return_value=(False, "Claude failed")),
             patch("nightshift.executor.runner.cleanup_branch"),
-            patch("nightshift.executor.git_ops._run"),
+            patch("nightshift.executor.git_ops.run_cmd"),
         ):
             run_result = await execute_run(global_config, project_path=tmp_path)
 

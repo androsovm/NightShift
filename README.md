@@ -162,6 +162,30 @@ tasks:
     priority: medium
 ```
 
+### Task example: adding a feature
+
+A task with all fields filled in -- Claude gets a focused assignment with clear boundaries:
+
+```yaml
+tasks:
+  - id: add-health-endpoint
+    title: Add /healthz endpoint
+    priority: high
+    model: claude-sonnet-4-6
+    estimated_minutes: 20
+    intent: |
+      Add a GET /healthz endpoint that returns {"status": "ok", "version": "..."}
+      reading the version from pyproject.toml. Include a test that checks
+      the response status and JSON schema.
+    scope:
+      - src/api/routes.py
+      - tests/test_routes.py
+    constraints:
+      - Do not add new dependencies
+      - Follow the existing route registration pattern in routes.py
+      - Version must be read at import time, not on every request
+```
+
 ### Secrets (`~/.nightshift/.env`)
 
 API tokens stored with `chmod 600`:

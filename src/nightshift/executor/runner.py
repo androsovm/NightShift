@@ -18,9 +18,11 @@ from nightshift.executor.git_ops import (
     comment_on_pr,
     create_branch,
     create_pr,
+    get_diff_stats,
     get_pr_url,
     prepare_repo,
     push_branch,
+    run_cmd,
 )
 from nightshift.executor.quality_gates import run_all_gates, run_baseline_tests
 from nightshift.models import (
@@ -212,9 +214,7 @@ async def _process_project(
 
         # Return to main between tasks.
         try:
-            from nightshift.executor.git_ops import _run
-
-            _run(["checkout", "main"], cwd=project_path)
+            run_cmd(["checkout", "main"], cwd=project_path)
         except Exception:
             log.exception("return_to_main_error")
 
@@ -279,8 +279,6 @@ async def _execute_task(
         autofix_and_commit(project_path)
 
         # e. Run quality gates
-        from nightshift.executor.git_ops import get_diff_stats
-
         files_changed, lines_added, lines_removed = get_diff_stats(project_path)
         task_result.files_changed = files_changed
         task_result.lines_added = lines_added

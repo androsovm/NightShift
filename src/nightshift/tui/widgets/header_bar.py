@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from rich.text import Text
 from textual.widgets import Static
@@ -87,7 +87,7 @@ class HeaderBar(Static):
         now = datetime.now(tz=tz or timezone.utc)
         target = now.replace(hour=h, minute=m, second=0, microsecond=0)
         if target <= now:
-            target = target.replace(day=target.day + 1)
+            target = target + timedelta(days=1)
 
         delta = target - now
         total_seconds = int(delta.total_seconds())

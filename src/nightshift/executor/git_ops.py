@@ -17,7 +17,7 @@ _GIT_BASE = ["git", "-c", "commit.gpgsign=false"]
 _GIT_TIMEOUT = 120  # seconds — prevent hanging on network issues
 _GH_TIMEOUT = 60
 
-def _run(
+def run_cmd(
     args: list[str],
     cwd: Path,
     *,
@@ -51,15 +51,15 @@ def prepare_repo(project_path: Path) -> None:
     """
     log.info("prepare_repo", project=str(project_path))
     try:
-        _run(["fetch", "origin"], cwd=project_path)
+        run_cmd(["fetch", "origin"], cwd=project_path)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         log.warning("prepare_repo.fetch_failed", error=str(exc))
 
     # checkout main is mandatory — if this fails, the project is broken
-    _run(["checkout", "main"], cwd=project_path)
+    run_cmd(["checkout", "main"], cwd=project_path)
 
     try:
-        _run(["pull", "--ff-only"], cwd=project_path)
+        run_cmd(["pull", "--ff-only"], cwd=project_path)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         log.warning("prepare_repo.pull_failed", error=str(exc))
 
@@ -77,14 +77,14 @@ def create_branch(project_path: Path, slug: str) -> tuple[str, bool]:
     branch = f"nightshift/{slug}-{date_str}"
 
     # Check whether the branch already exists locally.
-    probe = _run(
+    probe = run_cmd(
         ["branch", "--list", branch], cwd=project_path, check=False
     )
     reused = bool(probe.stdout.strip())
 
     log.info("create_branch", branch=branch, reused=reused)
     # -B creates the branch or resets it to HEAD if it already exists.
-    _run(["checkout", "-B", branch], cwd=project_path)
+    run_cmd(["checkout", "-B", branch], cwd=project_path)
     return branch, reused
 
 
@@ -100,7 +100,7 @@ def push_branch(
     cmd = ["push", "-u", "origin", branch]
     if force_with_lease:
         cmd.insert(1, "--force-with-lease")
-    _run(cmd, cwd=project_path)
+    run_cmd(cmd, cwd=project_path)
 
 
 def create_pr(
@@ -114,7 +114,7 @@ def create_pr(
     Returns ``(pr_url, pr_number)``.
     """
     log.info("create_pr", branch=branch, title=title)
-    result = subprocess.run(
+    result = run_cmd(
         [
             "gh",
             "pr",
@@ -128,9 +128,6 @@ def create_pr(
             branch,
         ],
         cwd=project_path,
-        check=True,
-        capture_output=True,
-        text=True,
     )
     pr_url = result.stdout.strip()
 
@@ -142,15 +139,15 @@ def create_pr(
 def checkout_pr_branch(project_path: Path, branch: str) -> None:
     """Fetch and checkout an existing PR branch for review work."""
     log.info("checkout_pr_branch", branch=branch)
-    _run(["fetch", "origin", branch], cwd=project_path)
+    run_cmd(["fetch", "origin", branch], cwd=project_path)
     # Use checkout -B to reset the local branch to match origin
-    _run(["checkout", "-B", branch, f"origin/{branch}"], cwd=project_path)
+    run_cmd(["checkout", "-B", branch, f"origin/{branch}"], cwd=project_path)
 
 
 def comment_on_pr(project_path: Path, pr_number: int, body: str) -> None:
     """Post a comment on an existing pull request."""
     log.info("comment_on_pr", pr_number=pr_number)
-    _run(
+    run_cmd(
         ["gh", "pr", "comment", str(pr_number), "--body", body],
         cwd=project_path,
     )
@@ -158,7 +155,7 @@ def comment_on_pr(project_path: Path, pr_number: int, body: str) -> None:
 
 def get_pr_url(project_path: Path, pr_number: int) -> str:
     """Return the HTML URL for a pull request."""
-    result = _run(
+    result = run_cmd(
         ["gh", "pr", "view", str(pr_number), "--json", "url", "--jq", ".url"],
         cwd=project_path,
     )
@@ -168,13 +165,13 @@ def get_pr_url(project_path: Path, pr_number: int) -> str:
 def cleanup_branch(project_path: Path, branch: str) -> None:
     """Return to main and delete the local feature branch."""
     log.info("cleanup_branch", branch=branch)
-    _run(["checkout", "main"], cwd=project_path)
-    _run(["branch", "-D", branch], cwd=project_path, check=False)
+    run_cmd(["checkout", "main"], cwd=project_path)
+    run_cmd(["branch", "-D", branch], cwd=project_path, check=False)
 
 
 def get_diff_stats(project_path: Path) -> tuple[int, int, int]:
     """Return ``(files_changed, lines_added, lines_removed)`` for staged + unstaged changes vs main."""
-    result = _run(["diff", "--stat", "main...HEAD"], cwd=project_path)
+    result = run_cmd(["diff", "--stat", "main...HEAD"], cwd=project_path)
     stdout = result.stdout.strip()
 
     if not stdout:
@@ -202,7 +199,7 @@ def get_diff_stats(project_path: Path) -> tuple[int, int, int]:
 
 def get_changed_files(project_path: Path) -> list[str]:
     """Return list of files changed between main and HEAD."""
-    result = _run(["diff", "--name-only", "main...HEAD"], cwd=project_path)
+    result = run_cmd(["diff", "--name-only", "main...HEAD"], cwd=project_path)
     return [f for f in result.stdout.strip().splitlines() if f]
 
 
@@ -231,13 +228,13 @@ def autofix_and_commit(project_path: Path) -> bool:
     )
 
     # Check if ruff actually changed anything.
-    status = _run(["status", "--porcelain"], cwd=project_path, check=False)
+    status = run_cmd(["status", "--porcelain"], cwd=project_path, check=False)
     if not status.stdout.strip():
         return False
 
     # Stage and commit the fixes.
-    _run(["add"] + py_files, cwd=project_path)
-    _run(
+    run_cmd(["add"] + py_files, cwd=project_path)
+    run_cmd(
         ["commit", "-m", "autofix: apply ruff lint fixes"],
         cwd=project_path,
     )

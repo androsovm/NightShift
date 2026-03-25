@@ -79,9 +79,9 @@ class GitHubSource:
     @staticmethod
     def _priority_from_labels(label_names: list[str]) -> TaskPriority:
         lowered = {name.lower() for name in label_names}
-        if "priority:high" in lowered or "P1" in label_names:
+        if "priority:high" in lowered or "p1" in lowered:
             return TaskPriority.HIGH
-        if "priority:low" in lowered or "P3" in label_names:
+        if "priority:low" in lowered or "p3" in lowered:
             return TaskPriority.LOW
         return TaskPriority.MEDIUM
 

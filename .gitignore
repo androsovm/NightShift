@@ -29,8 +29,12 @@ htmlcov/
 
 # NightShift runtime (user-specific, never commit)
 .nightshift.yaml
+.nightshift/
 .env
 *.log
+
+# Claude Code
+.claude/
 
 # OS
 .DS_Store

@@ -5,6 +5,10 @@ description = "Automated overnight task runner for Claude Code"
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.13"
+authors = [
+    {name = "NightShift Contributors"},
+]
+keywords = ["claude", "claude-code", "automation", "code-review", "tech-debt", "ai"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -13,6 +17,11 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Quality Assurance",
 ]
+
+[project.urls]
+Homepage = "https://github.com/androsovm/NightShift"
+Repository = "https://github.com/androsovm/NightShift"
+Issues = "https://github.com/androsovm/NightShift/issues"
 dependencies = [
     "typer>=0.15",
     "rich>=13",

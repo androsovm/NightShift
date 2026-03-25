@@ -67,7 +67,7 @@ async def test_max_prs_limit_stops_execution(tmp_path: Path, monkeypatch) -> Non
         patch("nightshift.executor.runner.run_all_gates", return_value=(True, "All gates passed")),
         patch("nightshift.executor.runner.push_branch"),
         patch("nightshift.executor.runner.create_pr", return_value=("https://github.com/pr/1", 1)),
-        patch("nightshift.executor.git_ops._run"),
+        patch("nightshift.executor.git_ops.run_cmd"),
     ):
         result = await execute_run(global_config, project_path=tmp_path)
 
