@@ -591,6 +591,12 @@ class NightShiftApp(App):
         yield ContextFooter()
 
     def on_mount(self) -> None:
+        from nightshift.storage.task_queue import recover_stale_running
+
+        recovered = recover_stale_running()
+        if recovered:
+            self.notify(f"Recovered {recovered} stale running task(s)", timeout=3)
+
         self._poll_data()
         self.set_interval(POLL_INTERVAL, self._poll_data)
 
@@ -637,7 +643,8 @@ class NightShiftApp(App):
 
         header = self.query_one(HeaderBar)
         header.update_data(
-            pending_count=len(pending),
+            pending_count=sum(1 for t in pending if t.status == TaskStatus.PENDING),
+            running_count=sum(1 for t in pending if t.status == TaskStatus.RUNNING),
             project_count=len(projects),
             last_run_passed=last_passed,
             last_run_failed=last_failed,

@@ -36,7 +36,7 @@ from nightshift.models import (
     TaskResult,
     TaskStatus,
 )
-from nightshift.storage.task_queue import get_pending_tasks, record_attempt, update_task
+from nightshift.storage.task_queue import clear_run_pid, get_pending_tasks, record_attempt, update_task, write_run_pid
 
 log = structlog.get_logger(__name__)
 
@@ -70,6 +70,7 @@ async def execute_run(
     max_duration_seconds = global_config.schedule.max_duration_hours * 3600
     run_start_time = time.monotonic()
 
+    write_run_pid()
     log.info("run_start", run_id=run_id, max_duration_hours=global_config.schedule.max_duration_hours)
 
     # Load pending tasks from the local queue.
@@ -108,6 +109,7 @@ async def execute_run(
             log.exception("project_error", project=str(proj_path))
 
     run_result.finished_at = datetime.now(tz=timezone.utc)
+    clear_run_pid()
     log.info(
         "run_finished",
         run_id=run_id,

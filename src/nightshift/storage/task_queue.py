@@ -19,6 +19,7 @@ from nightshift.models.task import (
 log = structlog.get_logger(__name__)
 
 TASKS_FILE = Path.home() / ".nightshift" / "tasks.yaml"
+RUN_PID_FILE = Path.home() / ".nightshift" / "run.pid"
 
 _PRIORITY_ORDER = {
     TaskPriority.HIGH: 0,
@@ -130,6 +131,54 @@ def find_by_source_ref(source_type: str, source_ref: str) -> QueuedTask | None:
         if t.source_type == source_type and t.source_ref == source_ref:
             return t
     return None
+
+
+def write_run_pid() -> None:
+    """Write current PID to the run lock file."""
+    RUN_PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    RUN_PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
+
+
+def clear_run_pid() -> None:
+    """Remove the run lock file."""
+    RUN_PID_FILE.unlink(missing_ok=True)
+
+
+def _is_runner_alive() -> bool:
+    """Check if a runner process is still alive based on the PID file."""
+    if not RUN_PID_FILE.exists():
+        return False
+    try:
+        pid = int(RUN_PID_FILE.read_text(encoding="utf-8").strip())
+        os.kill(pid, 0)  # signal 0 = check existence
+        return True
+    except (ValueError, ProcessLookupError, PermissionError, OSError):
+        return False
+
+
+def recover_stale_running() -> int:
+    """Reset any stuck 'running' tasks back to 'pending'.
+
+    This handles the case where the process was killed while a task was
+    mid-execution and the status was never updated to a terminal state.
+    Skips recovery if the runner process is still alive.
+    Returns the number of tasks recovered.
+    """
+    if _is_runner_alive():
+        return 0
+
+    tasks = load_tasks()
+    recovered = 0
+    for i, t in enumerate(tasks):
+        if t.status == TaskStatus.RUNNING:
+            tasks[i] = t.model_copy(update={"status": TaskStatus.PENDING})
+            recovered += 1
+    if recovered:
+        save_tasks(tasks)
+        log.info("task_queue.recovered_stale", count=recovered)
+    # Clean up stale PID file
+    clear_run_pid()
+    return recovered
 
 
 def get_pending_tasks(project_path: str | None = None) -> list[QueuedTask]:

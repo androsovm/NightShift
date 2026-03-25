@@ -59,9 +59,12 @@ def build_prompt(task: Task, system_prompt: str | None = None) -> str:
         "2. Implement the changes described above.\n"
         "3. If the task asks for tests, run them with `pytest` to verify they pass.\n"
         "4. Run `ruff check` on any files you changed and fix any issues.\n"
-        "5. Commit your work with a clear, descriptive commit message.\n"
-        "6. Do NOT create pull requests or push — that is handled externally.\n"
-        "7. Do NOT ask questions — make reasonable decisions and proceed."
+        "5. If you created or modified database migrations (e.g. Alembic), you MUST verify them locally:\n"
+        "   a. Apply: `alembic upgrade head` — confirm it succeeds with no errors.\n"
+        "   b. Rollback: `alembic downgrade -1` — confirm the downgrade works cleanly.\n"
+        "6. Commit your work with a clear, descriptive commit message.\n"
+        "7. Do NOT create pull requests or push — that is handled externally.\n"
+        "8. Do NOT ask questions — make reasonable decisions and proceed."
     )
 
     return "\n".join(parts)

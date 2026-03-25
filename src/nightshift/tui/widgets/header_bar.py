@@ -25,6 +25,7 @@ class HeaderBar(Static):
     def __init__(self) -> None:
         super().__init__(id="header-bar")
         self._pending_count = 0
+        self._running_count = 0
         self._last_run_passed = 0
         self._last_run_failed = 0
         self._last_run_skipped = 0
@@ -38,6 +39,7 @@ class HeaderBar(Static):
         self,
         *,
         pending_count: int = 0,
+        running_count: int = 0,
         project_count: int = 0,
         last_run_passed: int = 0,
         last_run_failed: int = 0,
@@ -46,6 +48,7 @@ class HeaderBar(Static):
         schedule_tz: str = "",
     ) -> None:
         self._pending_count = pending_count
+        self._running_count = running_count
         self._project_count = project_count
         self._last_run_passed = last_run_passed
         self._last_run_failed = last_run_failed
@@ -104,11 +107,16 @@ class HeaderBar(Static):
         text.append("   ", style="default")
 
         # Running indicator
-        if self._running_label:
+        running = self._running_label or (
+            f"Running {self._running_count} task{'s' if self._running_count != 1 else ''}"
+            if self._running_count > 0
+            else ""
+        )
+        if running:
             spinner = BRAILLE_SPINNER[self._spinner_frame % len(BRAILLE_SPINNER)]
             self._spinner_frame += 1
             text.append(f"{spinner} ", style=f"bold {YELLOW}")
-            text.append(f"{self._running_label}", style=f"{YELLOW}")
+            text.append(running, style=f"{YELLOW}")
             text.append("   ", style="default")
         else:
             # Countdown (only when idle)
