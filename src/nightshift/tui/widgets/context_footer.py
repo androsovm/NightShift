@@ -31,8 +31,11 @@ class ContextFooter(Static):
             ("R", "Run all"),
             ("t", "Add"),
             ("x", "Remove"),
+            ("p", "Priority"),
             ("e", "Retry"),
+            ("m", "Model"),
             ("s", "Sync"),
+            ("d", "Doctor"),
             ("?", "Help"),
         ]
         for i, (key, label) in enumerate(bindings):

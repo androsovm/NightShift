@@ -572,6 +572,7 @@ class NightShiftApp(App):
         Binding("s", "trigger_sync", "Sync", show=False),
         Binding("d", "trigger_doctor", "Doctor", show=False),
         Binding("e", "retry_task", "Retry failed", show=False),
+        Binding("p", "cycle_priority", "Priority", show=False),
     ]
 
     # Task IDs that the TUI has launched but the executor hasn't picked up yet.
@@ -714,6 +715,29 @@ class NightShiftApp(App):
         self.push_screen(
             ModelPickerScreen(task.id, task.model), callback=_on_result
         )
+
+    def action_cycle_priority(self) -> None:
+        task_queue = self.query_one(TaskQueuePanel)
+        task = task_queue.get_selected_task()
+        if not task:
+            self.notify("No task selected", timeout=2)
+            return
+
+        from nightshift.models.task import TaskPriority
+        from nightshift.storage.task_queue import get_task, update_task
+
+        cycle = {
+            TaskPriority.LOW: TaskPriority.MEDIUM,
+            TaskPriority.MEDIUM: TaskPriority.HIGH,
+            TaskPriority.HIGH: TaskPriority.LOW,
+        }
+        new_priority = cycle[task.priority]
+        update_task(task.id, priority=new_priority)
+        self._poll_data()
+        updated = get_task(task.id)
+        if updated:
+            self.query_one(TaskDetailPanel).update_task(updated)
+        self.notify(f"{task.title}: {new_priority.value}", timeout=2)
 
     def action_remove_task(self) -> None:
         task_queue = self.query_one(TaskQueuePanel)
