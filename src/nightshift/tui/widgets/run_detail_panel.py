@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from rich.text import Text
 from textual.containers import VerticalScroll
 from textual.widgets import Label
@@ -70,6 +72,14 @@ class RunDetailPanel(VerticalScroll):
             delta = (run.finished_at - run.started_at).total_seconds()
             text.append("Duration: ", style=f"bold {GREY}")
             text.append(f"{_format_duration(delta)}\n")
+        elif run.started_at and not run.finished_at:
+            from nightshift.storage.task_queue import _is_runner_alive
+
+            if _is_runner_alive():
+                elapsed = (datetime.now(tz=timezone.utc) - run.started_at).total_seconds()
+                text.append("Elapsed:  ", style=f"bold {GREY}")
+                text.append(f"{_format_duration(elapsed)}", style=f"{YELLOW}")
+                text.append(" ⏱\n", style=f"{YELLOW}")
 
         text.append("\n")
 

@@ -783,13 +783,20 @@ class NightShiftApp(App):
         self.push_screen(RunConfirmScreen(pending), callback=_on_result)
 
     def action_run_selected(self) -> None:
-        """Run the selected task with confirmation."""
+        """Run the selected task with confirmation. Auto-requeues failed tasks."""
         task_queue = self.query_one(TaskQueuePanel)
         task = task_queue.get_selected_task()
         if not task:
             return
 
         def _on_result(mode: str | None) -> None:
+            # Auto-requeue failed tasks so the runner can pick them up
+            if task.status.value == "failed" and mode in ("live", "dry"):
+                from nightshift.models.task import TaskStatus
+                from nightshift.storage.task_queue import update_task
+
+                update_task(task.id, status=TaskStatus.PENDING)
+
             project = Path(task.project_path).name
             if mode == "live":
                 self._mark_tasks_running([task.id])
