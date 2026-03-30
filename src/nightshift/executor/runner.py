@@ -56,6 +56,7 @@ _PRIORITY_ORDER = {
 async def execute_run(
     global_config: GlobalConfig,
     project_path: Path | None = None,
+    task_ids: list[str] | None = None,
 ) -> RunResult:
     """Execute a full NightShift run from the local task queue.
 
@@ -76,6 +77,11 @@ async def execute_run(
     # Load pending tasks from the local queue.
     project_filter = str(project_path.resolve()) if project_path else None
     pending = get_pending_tasks(project_path=project_filter)
+
+    # Narrow to specific tasks when requested (e.g. TUI "run selected").
+    if task_ids is not None:
+        allowed = set(task_ids)
+        pending = [t for t in pending if t.id in allowed]
 
     if not pending:
         log.info("no_pending_tasks")

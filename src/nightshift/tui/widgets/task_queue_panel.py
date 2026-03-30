@@ -1,4 +1,4 @@
-"""Task queue panel — scrollable list with Active / Built-in / Inactive sections."""
+"""Task queue panel — scrollable list grouped by category."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from nightshift.tui.constants import CYAN, DIM, GREEN, GREY, PINK, RED, YELLOW, 
 
 # Statuses shown in active/builtin sections
 _VISIBLE_STATUSES = {TaskStatus.PENDING, TaskStatus.RUNNING, TaskStatus.FAILED}
+_DONE_STATUSES = {TaskStatus.PASSED, TaskStatus.DONE, TaskStatus.SKIPPED}
 
 
 class TaskQueuePanel(Static):
@@ -62,32 +63,28 @@ class TaskQueuePanel(Static):
             return
         self._fingerprint = fp
 
-        # Group tasks into 3 categories
+        # Group tasks into 4 categories
         active: list[QueuedTask] = []
         builtin: list[QueuedTask] = []
+        completed: list[QueuedTask] = []
         inactive: list[QueuedTask] = []
 
         for t in tasks:
             if t.category == TaskCategory.INACTIVE:
                 inactive.append(t)
+            elif t.status in _DONE_STATUSES:
+                completed.append(t)
             elif t.category == TaskCategory.BUILTIN:
-                # Show pending/running/failed, plus recurring that completed
                 if t.status in _VISIBLE_STATUSES:
                     builtin.append(t)
-                elif (
-                    t.frequency not in (None, TaskFrequency.ONCE)
-                    and t.status in (TaskStatus.PASSED, TaskStatus.DONE)
-                ):
-                    builtin.append(t)
             else:
-                # ACTIVE — only pending/running/failed
                 if t.status in _VISIBLE_STATUSES:
                     active.append(t)
 
         new_items: list[ListItem] = []
         task_map: list[QueuedTask | None] = []
 
-        if not active and not builtin and not inactive:
+        if not active and not builtin and not completed and not inactive:
             new_items.append(
                 ListItem(Label(Text("No tasks in queue", style=f"italic {GREY}")))
             )
@@ -96,6 +93,7 @@ class TaskQueuePanel(Static):
             self._add_section(f"ACTIVE ({len(active)})", active, new_items, task_map)
             self._add_section(f"BUILT-IN ({len(builtin)})", builtin, new_items, task_map, show_frequency=True)
             self._add_section(f"INACTIVE ({len(inactive)})", inactive, new_items, task_map, dimmed=True)
+            self._add_section(f"COMPLETED ({len(completed)})", completed, new_items, task_map, dimmed=True)
 
         self._task_map = task_map
 

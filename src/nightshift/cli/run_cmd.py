@@ -18,6 +18,9 @@ def run(
     project: Optional[str] = typer.Option(
         None, "--project", "-p", help="Run only for a specific project path or name."
     ),
+    task_id: Optional[str] = typer.Option(
+        None, "--task-id", "-t", help="Run only the task with this ID."
+    ),
     retry_failed: bool = typer.Option(
         False, "--retry-failed", help="Requeue all failed tasks before running."
     ),
@@ -71,7 +74,7 @@ def run(
             console.print("[dim]No failed tasks to retry.[/dim]")
 
     if dry_run:
-        _dry_run(global_config, project_path)
+        _dry_run(global_config, project_path, task_id=task_id)
         return
 
     # --- Live run ---
@@ -103,13 +106,15 @@ def run(
 
     try:
         try:
-            result = asyncio.run(execute_run(global_config, project_path=project_path))
+            task_ids = [task_id] if task_id else None
+            result = asyncio.run(execute_run(global_config, project_path=project_path, task_ids=task_ids))
         except RuntimeError as rt_err:
             if "already running" in str(rt_err):
                 loop = asyncio.new_event_loop()
                 try:
+                    task_ids = [task_id] if task_id else None
                     result = loop.run_until_complete(
-                        execute_run(global_config, project_path=project_path)
+                        execute_run(global_config, project_path=project_path, task_ids=task_ids)
                     )
                 finally:
                     loop.close()
@@ -139,7 +144,7 @@ def run(
         raise typer.Exit(1)
 
 
-def _dry_run(global_config, project_path: Path | None) -> None:
+def _dry_run(global_config, project_path: Path | None, *, task_id: str | None = None) -> None:
     """Show tasks from the local queue that would be executed."""
     from nightshift.config.loader import load_project_config
     from nightshift.storage.task_queue import get_pending_tasks
@@ -148,6 +153,8 @@ def _dry_run(global_config, project_path: Path | None) -> None:
 
     project_filter = str(project_path.resolve()) if project_path else None
     pending = get_pending_tasks(project_path=project_filter)
+    if task_id is not None:
+        pending = [t for t in pending if t.id == task_id]
 
     if not pending:
         console.print("[dim]No pending tasks in queue.[/dim]")

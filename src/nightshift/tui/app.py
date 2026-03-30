@@ -346,7 +346,7 @@ class AddTaskScreen(ModalScreen[str | None]):
         """Create QueuedTasks and save them."""
         from slugify import slugify
 
-        from nightshift.models.task import QueuedTask, TaskCategory, TaskFrequency, TaskPriority
+        from nightshift.models.task import QueuedTask, TaskCategory, TaskFrequency, TaskPriority, TaskStatus
         from nightshift.storage.task_queue import add_task, find_by_source_ref
         from nightshift.tui.task_templates import TEMPLATE_BY_KEY
 
@@ -357,9 +357,11 @@ class AddTaskScreen(ModalScreen[str | None]):
             project_name = Path(project_path).name
             source_ref = f"builtin:{tmpl.key}:{project_name}"
 
-            # Skip if already in queue
+            # Skip if already in queue (any non-terminal status)
             existing = find_by_source_ref("builtin", source_ref)
-            if existing and existing.status.value == "pending":
+            if existing and existing.status not in (
+                TaskStatus.PASSED, TaskStatus.DONE, TaskStatus.SKIPPED,
+            ):
                 continue
 
             task_id = slugify(f"{tmpl.key}-{project_name}")
@@ -882,9 +884,9 @@ class NightShiftApp(App):
             project = Path(task.project_path).name
             if mode == "live":
                 self._mark_tasks_running([task.id])
-                self._run_command("nightshift", "run", "-p", project, label=f"Running: {task.title}")
+                self._run_command("nightshift", "run", "-p", project, "-t", task.id, label=f"Running: {task.title}")
             elif mode == "dry":
-                self._run_command("nightshift", "run", "--dry-run", "-p", project, label=f"Dry run: {task.title}")
+                self._run_command("nightshift", "run", "--dry-run", "-p", project, "-t", task.id, label=f"Dry run: {task.title}")
 
         self.push_screen(RunConfirmScreen([task], single=True), callback=_on_result)
 

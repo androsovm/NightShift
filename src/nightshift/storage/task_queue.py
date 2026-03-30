@@ -92,6 +92,9 @@ def get_task(task_id: str) -> QueuedTask | None:
 def add_task(task: QueuedTask) -> None:
     """Append a task to the queue."""
     tasks = load_tasks()
+    if any(t.id == task.id for t in tasks):
+        log.warning("task_queue.duplicate_id", task_id=task.id)
+        return
     tasks.append(task)
     save_tasks(tasks)
     log.info("task_queue.added", task_id=task.id, title=task.title)
@@ -128,11 +131,21 @@ def remove_task(task_id: str) -> bool:
 
 
 def find_by_source_ref(source_type: str, source_ref: str) -> QueuedTask | None:
-    """Find an existing task by source origin (for dedup)."""
-    for t in load_tasks():
-        if t.source_type == source_type and t.source_ref == source_ref:
-            return t
-    return None
+    """Find an existing task by source origin (for dedup).
+
+    Prefers non-terminal tasks so callers can make correct dedup decisions.
+    """
+    _ACTIVE_STATUSES = {TaskStatus.PENDING, TaskStatus.RUNNING, TaskStatus.FAILED}
+    matches = [
+        t for t in load_tasks()
+        if t.source_type == source_type and t.source_ref == source_ref
+    ]
+    if not matches:
+        return None
+    for m in matches:
+        if m.status in _ACTIVE_STATUSES:
+            return m
+    return matches[0]
 
 
 def deactivate_task(task_id: str) -> QueuedTask | None:
