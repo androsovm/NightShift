@@ -2,11 +2,17 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from nightshift.models.config import ProjectRef
 from nightshift.models.run import RunResult, TaskResult
 from nightshift.models.task import QueuedTask, TaskPriority, TaskStatus
-from nightshift.tui.widgets.run_history_panel import _format_duration, _sparkline
+from nightshift.tui.widgets.run_history_panel import (
+    _format_duration,
+    _run_summary_text,
+    _run_total_cost,
+    _sparkline,
+)
 
 
 class TestFormatDuration:
@@ -92,3 +98,73 @@ class TestRunHistoryFingerprint:
         r1 = [RunResult(run_id="run-1")]
         r2 = [RunResult(run_id="run-2")]
         assert RunHistoryPanel._make_fingerprint(r1) != RunHistoryPanel._make_fingerprint(r2)
+
+
+class TestRunHistorySummary:
+    def test_summary_text_highlights_failures_and_cost(self):
+        run = RunResult(
+            run_id="run-1",
+            started_at=datetime(2026, 3, 30, 1, 0, tzinfo=timezone.utc),
+            finished_at=datetime(2026, 3, 30, 1, 45, tzinfo=timezone.utc),
+            task_results=[
+                TaskResult(
+                    task_id="a",
+                    task_title="Task A",
+                    project_path="/tmp/project",
+                    status="failed",
+                    duration_seconds=600,
+                    claude_cost_usd=0.35,
+                ),
+                TaskResult(
+                    task_id="b",
+                    task_title="Task B",
+                    project_path="/tmp/project",
+                    status="passed",
+                    duration_seconds=900,
+                    claude_cost_usd=0.15,
+                ),
+            ],
+        )
+
+        summary = _run_summary_text(run).plain
+
+        assert "FAIL" in summary
+        assert "2 tasks" in summary
+        assert "1 failed" in summary
+        assert "45m" in summary
+        assert "$0.50" in summary
+
+    def test_total_cost_ignores_missing_values(self):
+        run = RunResult(
+            run_id="run-1",
+            task_results=[
+                TaskResult(
+                    task_id="a",
+                    task_title="Task A",
+                    project_path="/tmp/project",
+                    status="passed",
+                    claude_cost_usd=0.25,
+                ),
+                TaskResult(
+                    task_id="b",
+                    task_title="Task B",
+                    project_path="/tmp/project",
+                    status="failed",
+                ),
+            ],
+        )
+
+        assert _run_total_cost(run) == 0.25
+
+
+class TestRunHistorySelection:
+    def test_running_row_does_not_shift_selected_run(self):
+        from nightshift.tui.widgets.run_history_panel import RunHistoryPanel
+
+        run_1 = RunResult(run_id="run-1")
+        run_2 = RunResult(run_id="run-2")
+        panel = RunHistoryPanel()
+        panel._list_view = SimpleNamespace(index=1)
+        panel._run_map = [None, run_1, run_2]
+
+        assert panel.get_selected_run() is run_1

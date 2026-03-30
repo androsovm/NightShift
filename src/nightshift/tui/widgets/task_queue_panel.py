@@ -93,6 +93,10 @@ class TaskQueuePanel(Static):
             self._add_section(f"ACTIVE ({len(active)})", active, new_items, task_map)
             self._add_section(f"BUILT-IN ({len(builtin)})", builtin, new_items, task_map, show_frequency=True)
             self._add_section(f"INACTIVE ({len(inactive)})", inactive, new_items, task_map, dimmed=True)
+            completed.sort(
+                key=lambda t: t.last_completed_at or t.added_at,
+                reverse=True,
+            )
             self._add_section(f"COMPLETED ({len(completed)})", completed, new_items, task_map, dimmed=True)
 
         self._task_map = task_map

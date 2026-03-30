@@ -106,10 +106,10 @@ class TestInvokeClaude:
             args=[], returncode=0, stdout="All done!", stderr=""
         )
         log_file = tmp_path / "logs" / "run.log"
-        success, output = invoke_claude(tmp_path, "prompt", 30, log_file)
+        invocation = invoke_claude(tmp_path, "prompt", 30, log_file)
 
-        assert success is True
-        assert "All done!" in output
+        assert invocation.success is True
+        assert "All done!" in invocation.output
         assert log_file.exists()
         assert log_file.read_text(encoding="utf-8") == "All done!"
 
@@ -119,31 +119,31 @@ class TestInvokeClaude:
             args=[], returncode=1, stdout="partial", stderr="error detail"
         )
         log_file = tmp_path / "run.log"
-        success, output = invoke_claude(tmp_path, "prompt", 10, log_file)
+        invocation = invoke_claude(tmp_path, "prompt", 10, log_file)
 
-        assert success is False
-        assert "partial" in output
-        assert "STDERR" in output
-        assert "error detail" in output
+        assert invocation.success is False
+        assert "partial" in invocation.output
+        assert "STDERR" in invocation.output
+        assert "error detail" in invocation.output
 
     @patch("nightshift.executor.claude.subprocess.run")
     def test_timeout(self, mock_run: MagicMock, tmp_path: Path) -> None:
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="claude", timeout=600)
         log_file = tmp_path / "run.log"
-        success, output = invoke_claude(tmp_path, "prompt", 10, log_file)
+        invocation = invoke_claude(tmp_path, "prompt", 10, log_file)
 
-        assert success is False
-        assert "timed out" in output
+        assert invocation.success is False
+        assert "timed out" in invocation.output
         assert log_file.exists()
 
     @patch("nightshift.executor.claude.subprocess.run")
     def test_claude_not_found(self, mock_run: MagicMock, tmp_path: Path) -> None:
         mock_run.side_effect = FileNotFoundError()
         log_file = tmp_path / "run.log"
-        success, output = invoke_claude(tmp_path, "prompt", 10, log_file)
+        invocation = invoke_claude(tmp_path, "prompt", 10, log_file)
 
-        assert success is False
-        assert "not found" in output
+        assert invocation.success is False
+        assert "not found" in invocation.output
         assert log_file.exists()
 
     @patch("nightshift.executor.claude.subprocess.run")
@@ -161,6 +161,8 @@ class TestInvokeClaude:
         assert "-p" in cmd
         assert "do stuff" in cmd
         assert "--dangerously-skip-permissions" in cmd
+        assert "--output-format" in cmd
+        assert "json" in cmd
 
         kwargs = mock_run.call_args[1]
         assert kwargs["timeout"] == 45 * 60
@@ -185,11 +187,43 @@ class TestInvokeClaude:
             args=[], returncode=0, stdout="out", stderr="warn"
         )
         log_file = tmp_path / "run.log"
-        success, output = invoke_claude(tmp_path, "p", 5, log_file)
+        invocation = invoke_claude(tmp_path, "p", 5, log_file)
 
-        assert success is True
-        assert "out" in output
-        assert "warn" in output
+        assert invocation.success is True
+        assert "out" in invocation.output
+        assert "warn" in invocation.output
+
+    @patch("nightshift.executor.claude.subprocess.run")
+    def test_json_output_extracts_usage(
+        self, mock_run: MagicMock, tmp_path: Path
+    ) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                '{"type":"result","subtype":"success","total_cost_usd":0.003,'
+                '"duration_ms":1234,"duration_api_ms":800,"num_turns":6,'
+                '"usage":{"input_tokens":1200,"output_tokens":340,'
+                '"cache_read_input_tokens":900},"result":"All done!"}'
+            ),
+            stderr="",
+        )
+        log_file = tmp_path / "run.log"
+
+        invocation = invoke_claude(tmp_path, "prompt", 10, log_file)
+
+        assert invocation.success is True
+        assert invocation.output == "All done!"
+        assert invocation.cost_usd == pytest.approx(0.003)
+        assert invocation.duration_ms == 1234
+        assert invocation.duration_api_ms == 800
+        assert invocation.num_turns == 6
+        assert invocation.input_tokens == 1200
+        assert invocation.output_tokens == 340
+        assert invocation.cache_read_tokens == 900
+        log_text = log_file.read_text(encoding="utf-8")
+        assert "All done!" in log_text
+        assert "total_cost_usd=0.003000" in log_text
 
 
 # ---------------------------------------------------------------------------
@@ -216,10 +250,10 @@ class TestRetryOnOverloaded:
             ),
         ]
         log_file = tmp_path / "run.log"
-        success, output = invoke_claude(tmp_path, "prompt", 10, log_file)
+        invocation = invoke_claude(tmp_path, "prompt", 10, log_file)
 
-        assert success is True
-        assert "Success!" in output
+        assert invocation.success is True
+        assert "Success!" in invocation.output
         assert mock_run.call_count == 3
         assert mock_sleep.call_count == 2
         mock_sleep.assert_called_with(30)
@@ -236,9 +270,9 @@ class TestNoRetryOnNormalFailure:
             args=[], returncode=1, stdout="", stderr="syntax error in prompt"
         )
         log_file = tmp_path / "run.log"
-        success, output = invoke_claude(tmp_path, "prompt", 10, log_file)
+        invocation = invoke_claude(tmp_path, "prompt", 10, log_file)
 
-        assert success is False
+        assert invocation.success is False
         assert mock_run.call_count == 1
         mock_sleep.assert_not_called()
 
@@ -254,8 +288,8 @@ class TestAllRetriesExhausted:
             args=[], returncode=1, stdout="", stderr="overloaded"
         )
         log_file = tmp_path / "run.log"
-        success, output = invoke_claude(tmp_path, "prompt", 10, log_file)
+        invocation = invoke_claude(tmp_path, "prompt", 10, log_file)
 
-        assert success is False
+        assert invocation.success is False
         assert mock_run.call_count == 3
         assert mock_sleep.call_count == 2

@@ -8,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from nightshift.cli.app import app
+from nightshift.executor.claude import ClaudeInvocationResult
 from nightshift.models.task import QueuedTask, TaskAttempt, TaskPriority, TaskStatus
 from nightshift.storage import task_queue
 
@@ -29,6 +30,7 @@ def _make_task(task_id: str = "test-task", **kwargs) -> QueuedTask:
 @pytest.fixture(autouse=True)
 def _use_tmp_tasks_file(tmp_path, monkeypatch):
     monkeypatch.setattr(task_queue, "TASKS_FILE", tmp_path / "tasks.yaml")
+    monkeypatch.setattr(task_queue, "RUN_PID_FILE", tmp_path / "run.pid")
 
 
 class TestTasksList:
@@ -200,7 +202,10 @@ class TestRunnerRecordsAttempts:
             patch("nightshift.executor.runner.create_branch", return_value=("nightshift/t1", False)),
             patch("nightshift.executor.runner.run_baseline_tests", return_value=(True, 5, 0)),
             patch("nightshift.executor.runner.build_prompt", return_value="prompt"),
-            patch("nightshift.executor.runner.invoke_claude", return_value=(True, "ok")),
+            patch(
+                "nightshift.executor.runner.invoke_claude",
+                return_value=ClaudeInvocationResult(success=True, output="ok"),
+            ),
             patch("nightshift.executor.runner.autofix_and_commit", return_value=False),
             patch("nightshift.executor.git_ops.get_diff_stats", return_value=(2, 10, 3)),
             patch("nightshift.executor.runner.run_all_gates", return_value=(True, "All gates passed")),
@@ -252,7 +257,10 @@ class TestRunnerRecordsAttempts:
             patch("nightshift.executor.runner.create_branch", return_value=("nightshift/t1", False)),
             patch("nightshift.executor.runner.run_baseline_tests", return_value=(True, 5, 0)),
             patch("nightshift.executor.runner.build_prompt", return_value="prompt"),
-            patch("nightshift.executor.runner.invoke_claude", return_value=(False, "Claude failed")),
+            patch(
+                "nightshift.executor.runner.invoke_claude",
+                return_value=ClaudeInvocationResult(success=False, output="Claude failed"),
+            ),
             patch("nightshift.executor.runner.cleanup_branch"),
             patch("nightshift.executor.git_ops.run_cmd"),
         ):

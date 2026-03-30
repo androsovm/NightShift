@@ -164,13 +164,20 @@ def _validate_timezone(val: str) -> bool | str:
 
 
 def _scan_git_repos(base: Path) -> list[Path]:
-    """Scan a directory for git repositories (one level deep)."""
+    """Scan a directory for git repositories (up to two levels deep)."""
     repos: list[Path] = []
     if not base.is_dir():
         return repos
     for entry in sorted(base.iterdir()):
-        if entry.is_dir() and (entry / ".git").is_dir():
+        if not entry.is_dir():
+            continue
+        if (entry / ".git").is_dir():
             repos.append(entry)
+        else:
+            # Check one level deeper (e.g. Projects/otonfm/otonfm/.git)
+            for sub in sorted(entry.iterdir()):
+                if sub.is_dir() and (sub / ".git").is_dir():
+                    repos.append(sub)
     return repos
 
 

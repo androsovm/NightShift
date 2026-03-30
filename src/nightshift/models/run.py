@@ -10,6 +10,7 @@ class TaskResult(BaseModel):
     task_title: str
     project_path: str
     status: str  # passed / failed / skipped
+    model: str | None = None
     branch: str | None = None
     pr_url: str | None = None
     pr_number: int | None = None
@@ -17,6 +18,14 @@ class TaskResult(BaseModel):
     lines_added: int = 0
     lines_removed: int = 0
     duration_seconds: float = 0.0
+    claude_cost_usd: float | None = None
+    claude_duration_ms: int | None = None
+    claude_api_duration_ms: int | None = None
+    claude_num_turns: int | None = None
+    claude_input_tokens: int | None = None
+    claude_output_tokens: int | None = None
+    claude_cache_creation_tokens: int | None = None
+    claude_cache_read_tokens: int | None = None
     error: str | None = None
     log_file: str | None = None
 

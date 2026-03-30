@@ -120,8 +120,8 @@ class TestSyncDedup:
         assert len(loaded) == 1
 
     @pytest.mark.asyncio
-    async def test_no_source_ref_always_adds(self, tmp_path):
-        """Tasks without source_ref should always be added (no dedup possible)."""
+    async def test_no_source_ref_duplicate_id_prevented(self, tmp_path):
+        """Tasks with duplicate IDs are rejected by add_task even without source_ref."""
         task = Task(
             id="manual-1",
             title="Manual task",
@@ -144,7 +144,7 @@ class TestSyncDedup:
             await _do_sync(project_filter=None)
 
         loaded = task_queue.load_tasks()
-        assert len(loaded) == 2
+        assert len(loaded) == 1
 
 
 class TestSyncProjectFilter:

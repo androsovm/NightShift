@@ -185,9 +185,13 @@ class TestPushBranch:
 class TestCreatePR:
     @patch("nightshift.executor.git_ops.subprocess.run")
     def test_creates_draft_pr(self, mock_run: MagicMock, project: Path) -> None:
-        mock_run.return_value = _ok(
-            stdout="https://github.com/user/repo/pull/42\n"
-        )
+        # First call: gh pr view (no existing PR), second: gh pr create
+        no_pr = _ok(stdout="")
+        no_pr.returncode = 1
+        mock_run.side_effect = [
+            no_pr,
+            _ok(stdout="https://github.com/user/repo/pull/42\n"),
+        ]
         url, number = create_pr(project, "nightshift/fix-20260318", "Title", "Body")
 
         assert url == "https://github.com/user/repo/pull/42"
@@ -201,11 +205,29 @@ class TestCreatePR:
 
     @patch("nightshift.executor.git_ops.subprocess.run")
     def test_pr_number_extraction(self, mock_run: MagicMock, project: Path) -> None:
-        mock_run.return_value = _ok(
-            stdout="https://github.com/org/repo/pull/999\n"
-        )
+        no_pr = _ok(stdout="")
+        no_pr.returncode = 1
+        mock_run.side_effect = [
+            no_pr,
+            _ok(stdout="https://github.com/org/repo/pull/999\n"),
+        ]
         _, number = create_pr(project, "branch", "T", "B")
         assert number == 999
+
+    @patch("nightshift.executor.git_ops.subprocess.run")
+    def test_updates_existing_pr(self, mock_run: MagicMock, project: Path) -> None:
+        """When a PR already exists for the branch, update it instead of creating."""
+        mock_run.side_effect = [
+            _ok(stdout='{"url": "https://github.com/org/repo/pull/17", "number": 17, "state": "OPEN"}'),
+            _ok(stdout=""),
+        ]
+        url, number = create_pr(project, "branch", "New Title", "New Body")
+
+        assert url == "https://github.com/org/repo/pull/17"
+        assert number == 17
+        edit_cmd = mock_run.call_args_list[1][0][0]
+        assert "edit" in edit_cmd
+        assert "17" in edit_cmd
 
 
 # ---------------------------------------------------------------------------

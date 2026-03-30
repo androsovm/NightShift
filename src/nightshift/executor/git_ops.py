@@ -76,11 +76,20 @@ def create_branch(project_path: Path, slug: str) -> tuple[str, bool]:
     date_str = datetime.now(tz=timezone.utc).strftime("%Y%m%d")
     branch = f"nightshift/{slug}-{date_str}"
 
-    # Check whether the branch already exists locally.
+    # Check whether the branch already exists locally or on remote.
     probe = run_cmd(
         ["branch", "--list", branch], cwd=project_path, check=False
     )
     reused = bool(probe.stdout.strip())
+
+    if not reused:
+        # Also check remote — branch may have been cleaned up locally
+        # but still exists on origin (e.g. from a previous failed run).
+        remote_probe = run_cmd(
+            ["ls-remote", "--heads", "origin", branch],
+            cwd=project_path, check=False,
+        )
+        reused = bool(remote_probe.stdout.strip())
 
     log.info("create_branch", branch=branch, reused=reused)
     # -B creates the branch or resets it to HEAD if it already exists.
@@ -109,11 +118,34 @@ def create_pr(
     title: str,
     body: str,
 ) -> tuple[str, int]:
-    """Create a draft pull request via ``gh pr create``.
+    """Create or update a draft pull request via ``gh``.
 
-    Returns ``(pr_url, pr_number)``.
+    If a PR already exists for the branch, updates its title and body
+    instead of failing.  Returns ``(pr_url, pr_number)``.
     """
     log.info("create_pr", branch=branch, title=title)
+
+    # Check if an open PR already exists for this head branch.
+    existing = run_cmd(
+        ["gh", "pr", "view", branch, "--json", "url,number,state"],
+        cwd=project_path,
+        check=False,
+    )
+    if existing.returncode == 0 and existing.stdout.strip():
+        import json
+
+        pr_info = json.loads(existing.stdout.strip())
+        # Only reuse if PR is still open (not merged/closed).
+        if pr_info.get("state") == "OPEN":
+            pr_url = pr_info["url"]
+            pr_number = pr_info["number"]
+            run_cmd(
+                ["gh", "pr", "edit", str(pr_number), "--title", title, "--body", body],
+                cwd=project_path,
+            )
+            log.info("create_pr.updated_existing", pr_url=pr_url, pr_number=pr_number)
+            return pr_url, pr_number
+
     result = run_cmd(
         [
             "gh",

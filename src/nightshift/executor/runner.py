@@ -268,7 +268,8 @@ async def _execute_task(
         # c. Invoke Claude
         prompt = build_prompt(task, project_config.claude_system_prompt)
         model = task.model or project_config.default_model
-        success, output = invoke_claude(
+        task_result.model = model
+        invocation = invoke_claude(
             project_path=project_path,
             prompt=prompt,
             timeout_minutes=project_config.limits.task_timeout_minutes,
@@ -276,10 +277,18 @@ async def _execute_task(
             model=model,
         )
         task_result.log_file = str(log_file)
+        task_result.claude_cost_usd = invocation.cost_usd
+        task_result.claude_duration_ms = invocation.duration_ms
+        task_result.claude_api_duration_ms = invocation.duration_api_ms
+        task_result.claude_num_turns = invocation.num_turns
+        task_result.claude_input_tokens = invocation.input_tokens
+        task_result.claude_output_tokens = invocation.output_tokens
+        task_result.claude_cache_creation_tokens = invocation.cache_creation_tokens
+        task_result.claude_cache_read_tokens = invocation.cache_read_tokens
 
-        if not success:
+        if not invocation.success:
             task_result.status = TaskStatus.FAILED
-            task_result.error = f"Claude invocation failed: {output[:500]}"
+            task_result.error = f"Claude invocation failed: {invocation.output[:500]}"
             cleanup_branch(project_path, branch)
             return task_result
 

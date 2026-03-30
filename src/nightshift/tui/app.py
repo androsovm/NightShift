@@ -57,6 +57,7 @@ class HelpScreen(ModalScreen[None]):
         text.append("ACTIONS\n", style=f"bold {GREEN}")
         text.append("  r           Run selected task\n", style=f"{GREY}")
         text.append("  R           Run all pending tasks\n", style=f"{GREY}")
+        text.append("  a           Add project\n", style=f"{GREY}")
         text.append("  t           Add built-in task\n", style=f"{GREY}")
         text.append("  m           Change task model\n", style=f"{GREY}")
         text.append("  x           Toggle active/inactive, remove built-in\n", style=f"{GREY}")
@@ -350,7 +351,7 @@ class AddTaskScreen(ModalScreen[str | None]):
         from slugify import slugify
 
         from nightshift.models.task import QueuedTask, TaskCategory, TaskFrequency, TaskPriority, TaskStatus
-        from nightshift.storage.task_queue import add_task, find_by_source_ref
+        from nightshift.storage.task_queue import add_task, find_by_source_ref, update_task
         from nightshift.tui.task_templates import TEMPLATE_BY_KEY
 
         tmpl = TEMPLATE_BY_KEY[self._selected_template_key]
@@ -360,11 +361,26 @@ class AddTaskScreen(ModalScreen[str | None]):
             project_name = Path(project_path).name
             source_ref = f"builtin:{tmpl.key}:{project_name}"
 
-            # Skip if already in queue (any non-terminal status)
+            # Check if already in queue
             existing = find_by_source_ref("builtin", source_ref)
-            if existing and existing.status not in (
-                TaskStatus.PASSED, TaskStatus.DONE, TaskStatus.SKIPPED,
-            ):
+            if existing:
+                if existing.status not in (
+                    TaskStatus.PASSED, TaskStatus.DONE, TaskStatus.SKIPPED,
+                ):
+                    # Active task exists — skip
+                    continue
+                # Terminal task exists — update in-place instead of creating duplicate
+                freq = frequency if isinstance(frequency, TaskFrequency) else TaskFrequency.ONCE
+                update_task(
+                    existing.id,
+                    status=TaskStatus.PENDING,
+                    intent=tmpl.intent,
+                    scope=list(tmpl.scope),
+                    constraints=list(tmpl.constraints),
+                    frequency=freq,
+                    model=model,
+                )
+                added += 1
                 continue
 
             task_id = slugify(f"{tmpl.key}-{project_name}")
@@ -531,6 +547,464 @@ class ModelPickerScreen(ModalScreen[str | None]):
             event.prevent_default()
 
 
+class AddProjectScreen(ModalScreen[str | None]):
+    """Multi-phase modal to add a new project: pick repo → pick source → configure → save."""
+
+    DEFAULT_CSS = """
+    AddProjectScreen {
+        align: center middle;
+    }
+    AddProjectScreen > Vertical {
+        width: 80;
+        height: auto;
+        max-height: 40;
+        border: solid #4C566A;
+        background: #2E3440;
+        padding: 1 2;
+    }
+    AddProjectScreen .ap-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    AddProjectScreen .ap-desc {
+        color: #616E88;
+        margin-bottom: 1;
+    }
+    AddProjectScreen ListView {
+        height: auto;
+        max-height: 30;
+        background: #2E3440;
+    }
+    AddProjectScreen ListView > ListItem.-highlight {
+        background: #242933;
+    }
+    AddProjectScreen ListView:focus > ListItem.-highlight {
+        background: #20252E;
+    }
+    AddProjectScreen Input {
+        margin-top: 1;
+    }
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._phase = "repo"  # "repo" -> "custom_path" -> "source" -> "source_config" -> "confirm"
+        self._selected_path: Path | None = None
+        self._selected_source: str | None = None
+        self._source_config_fields: dict[str, str] = {}
+        self._repos: list[Path] = []
+        self._existing_paths: set[str] = set()
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("Add project", classes="ap-title")
+            yield Label(
+                "Select a git repository to add to NightShift.",
+                classes="ap-desc",
+            )
+            yield ListView(id="ap-list")
+
+    BINDINGS = [
+        Binding("enter", "select_item", "Select", show=False),
+    ]
+
+    def _focus_list(self) -> None:
+        lv = self.query_one("#ap-list", ListView)
+        lv.focus()
+        self.call_after_refresh(self._ensure_cursor)
+
+    def _ensure_cursor(self) -> None:
+        lv = self.query_one("#ap-list", ListView)
+        if lv.index is None and len(list(lv.children)) > 0:
+            lv.index = 0
+
+    def action_select_item(self) -> None:
+        lv = self.query_one("#ap-list", ListView)
+        if lv.index is not None:
+            lv.action_select_cursor()
+
+    def on_mount(self) -> None:
+        from nightshift.config.loader import load_global_config
+
+        config = load_global_config()
+        self._existing_paths = {str(ref.path.resolve()) for ref in config.projects}
+        self._rebuild_repo_list()
+        self._focus_list()
+
+    def _scan_git_repos(self, base: Path) -> list[Path]:
+        repos: list[Path] = []
+        if not base.is_dir():
+            return repos
+        for entry in sorted(base.iterdir()):
+            if not entry.is_dir():
+                continue
+            if (entry / ".git").is_dir():
+                repos.append(entry)
+            else:
+                # Check one level deeper (e.g. Projects/otonfm/otonfm/.git)
+                for sub in sorted(entry.iterdir()):
+                    if sub.is_dir() and (sub / ".git").is_dir():
+                        repos.append(sub)
+        return repos
+
+    def _detect_github_remote(self, project_path: Path) -> str | None:
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(project_path), "remote", "get-url", "origin"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            url = result.stdout.strip()
+            if not url:
+                return None
+            if url.startswith("git@"):
+                parts = url.split(":")[-1]
+                return parts.removesuffix(".git")
+            if "github.com" in url:
+                parts = url.split("github.com/")[-1]
+                return parts.removesuffix(".git")
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+        return None
+
+    def _rebuild_repo_list(self) -> None:
+        from rich.text import Text
+
+        self._phase = "repo"
+        default_dir = Path.home() / "Projects"
+        self._repos = [
+            r for r in self._scan_git_repos(default_dir)
+            if str(r.resolve()) not in self._existing_paths
+        ]
+
+        title_label = self.query_one(".ap-title", Label)
+        title_label.update("Add project")
+
+        desc_label = self.query_one(".ap-desc", Label)
+        if self._repos:
+            desc_label.update(f"Found {len(self._repos)} new repos in ~/Projects")
+        else:
+            desc_label.update("No new repos found in ~/Projects. Enter a custom path.")
+
+        lv = self.query_one("#ap-list", ListView)
+        lv.clear()
+
+        for repo in self._repos:
+            row = Text()
+            row.append(f"  {repo.name}", style=f"bold {CYAN}")
+            path_str = str(repo).replace(str(Path.home()), "~")
+            row.append(f"  {path_str}", style=f"{PINK}")
+            lv.mount(ListItem(Label(row)))
+
+        # Custom path option
+        custom = Text()
+        custom.append("  + Enter custom path...", style=f"{GREEN}")
+        lv.mount(ListItem(Label(custom)))
+
+        # Remove any leftover Input
+        for inp in self.query("Input"):
+            inp.remove()
+
+        self._focus_list()
+
+    def _show_custom_path_input(self) -> None:
+        self._phase = "custom_path"
+        title_label = self.query_one(".ap-title", Label)
+        title_label.update("Enter project path")
+        desc_label = self.query_one(".ap-desc", Label)
+        desc_label.update("Path to a git repository directory")
+
+        lv = self.query_one("#ap-list", ListView)
+        lv.clear()
+
+        container = self.query_one("Vertical")
+        inp = Input(placeholder="~/Projects/my-repo", id="ap-path-input")
+        container.mount(inp)
+        inp.focus()
+
+    def _show_source_picker(self) -> None:
+        from rich.text import Text
+
+        from nightshift.sources import available_sources
+
+        self._phase = "source"
+
+        title_label = self.query_one(".ap-title", Label)
+        title_label.update(f"Task source for {self._selected_path.name}")
+
+        desc_label = self.query_one(".ap-desc", Label)
+        desc_label.update("Where should NightShift find tasks for this project?")
+
+        lv = self.query_one("#ap-list", ListView)
+        lv.clear()
+
+        labels = {
+            "yaml": "YAML — local task list in .nightshift.yaml",
+            "github": "GitHub Issues — fetch from labeled issues",
+            "youtrack": "YouTrack — fetch tasks by tag",
+            "trello": "Trello — fetch from a board list",
+        }
+
+        for name in available_sources():
+            row = Text()
+            row.append(f"  {name}", style=f"bold {CYAN}")
+            desc = labels.get(name, f"Plugin: {name}")
+            row.append(f"  {desc}", style=f"{GREY}")
+            lv.mount(ListItem(Label(row)))
+
+        # Remove any leftover Input
+        for inp in self.query("Input"):
+            inp.remove()
+
+        self._focus_list()
+
+    def _show_source_config(self) -> None:
+        """Show Input fields for source-specific configuration."""
+        self._phase = "source_config"
+        self._source_config_fields = {}
+
+        title_label = self.query_one(".ap-title", Label)
+        title_label.update(f"Configure {self._selected_source}")
+
+        lv = self.query_one("#ap-list", ListView)
+        lv.clear()
+
+        container = self.query_one("Vertical")
+
+        # Remove any leftover Input widgets
+        for inp in self.query("Input"):
+            inp.remove()
+
+        if self._selected_source == "github":
+            detected = self._detect_github_remote(self._selected_path)
+            desc_label = self.query_one(".ap-desc", Label)
+            if detected:
+                desc_label.update(f"Detected remote: {detected}")
+            else:
+                desc_label.update("Enter GitHub repository details")
+
+            inp_repo = Input(
+                placeholder="owner/repo",
+                value=detected or "",
+                id="ap-github-repo",
+            )
+            inp_label = Input(
+                placeholder="Issue label filter",
+                value="nightshift",
+                id="ap-github-label",
+            )
+            container.mount(inp_repo)
+            container.mount(inp_label)
+            inp_repo.focus()
+
+        elif self._selected_source == "youtrack":
+            desc_label = self.query_one(".ap-desc", Label)
+            desc_label.update("Enter YouTrack connection details")
+
+            container.mount(Input(placeholder="Base URL (e.g. https://youtrack.example.com)", id="ap-yt-url"))
+            container.mount(Input(placeholder="Project ID", id="ap-yt-project"))
+            container.mount(Input(placeholder="Tag (default: nightshift)", value="nightshift", id="ap-yt-tag"))
+            self.query_one("#ap-yt-url").focus()
+
+        elif self._selected_source == "trello":
+            desc_label = self.query_one(".ap-desc", Label)
+            desc_label.update("Enter Trello board details")
+
+            container.mount(Input(placeholder="Board ID", id="ap-trello-board"))
+            container.mount(Input(placeholder="List name (default: NightShift Queue)", value="NightShift Queue", id="ap-trello-list"))
+            self.query_one("#ap-trello-board").focus()
+
+    def _collect_source_config(self) -> "SourceConfig | None":
+        """Collect source config from Input fields. Returns None if required fields missing."""
+        from nightshift.models.config import SourceConfig
+
+        if self._selected_source == "yaml":
+            return SourceConfig(type="yaml")
+
+        if self._selected_source == "github":
+            repo = self.query_one("#ap-github-repo", Input).value.strip()
+            label = self.query_one("#ap-github-label", Input).value.strip()
+            if not repo:
+                self.notify("Repository is required", severity="error", timeout=2)
+                return None
+            return SourceConfig(
+                type="github",
+                repo=repo,
+                labels=[label] if label else ["nightshift"],
+            )
+
+        if self._selected_source == "youtrack":
+            url = self.query_one("#ap-yt-url", Input).value.strip()
+            project = self.query_one("#ap-yt-project", Input).value.strip()
+            tag = self.query_one("#ap-yt-tag", Input).value.strip()
+            if not url or not project:
+                self.notify("URL and project ID are required", severity="error", timeout=2)
+                return None
+            return SourceConfig(
+                type="youtrack",
+                base_url=url,
+                project_id=project,
+                tag=tag or "nightshift",
+            )
+
+        if self._selected_source == "trello":
+            board = self.query_one("#ap-trello-board", Input).value.strip()
+            list_name = self.query_one("#ap-trello-list", Input).value.strip()
+            if not board:
+                self.notify("Board ID is required", severity="error", timeout=2)
+                return None
+            return SourceConfig(
+                type="trello",
+                board_id=board,
+                list_name=list_name or "NightShift Queue",
+            )
+
+        # Plugin source — no config fields, just save with empty options
+        return SourceConfig(type=self._selected_source)
+
+    def _show_confirm(self) -> None:
+        """Show confirmation screen with summary."""
+        from rich.text import Text
+
+        self._phase = "confirm"
+
+        title_label = self.query_one(".ap-title", Label)
+        title_label.update("Confirm")
+
+        desc_label = self.query_one(".ap-desc", Label)
+        needs_token = self._selected_source in ("github", "youtrack", "trello")
+        if needs_token:
+            desc_label.update("Press Enter to save. Configure API tokens in ~/.nightshift/.env")
+        else:
+            desc_label.update("Press Enter to save")
+
+        lv = self.query_one("#ap-list", ListView)
+        lv.clear()
+
+        # Remove Input widgets
+        for inp in self.query("Input"):
+            inp.remove()
+
+        text = Text()
+        path_str = str(self._selected_path).replace(str(Path.home()), "~")
+        text.append(f"  Project:  ", style=f"{GREY}")
+        text.append(f"{self._selected_path.name}", style=f"bold {CYAN}")
+        text.append(f"\n  Path:     ", style=f"{GREY}")
+        text.append(f"{path_str}", style=f"{PINK}")
+        text.append(f"\n  Source:   ", style=f"{GREY}")
+        text.append(f"{self._selected_source}", style=f"bold {GREEN}")
+
+        lv.mount(ListItem(Label(text)))
+
+        self._focus_list()
+
+    def _save_project(self) -> None:
+        """Save project config and update global config."""
+        from nightshift.config.loader import (
+            load_global_config,
+            load_project_config,
+            save_global_config,
+            save_project_config,
+        )
+        from nightshift.models.config import ProjectConfig, ProjectLimits, ProjectRef
+
+        src = self._collect_source_config()
+        if src is None:
+            return
+
+        global_config = load_global_config()
+
+        # Copy limits from first existing project, or use defaults
+        if global_config.projects:
+            existing_pc = load_project_config(global_config.projects[0].path)
+            limits = existing_pc.limits
+        else:
+            limits = ProjectLimits()
+
+        pc = ProjectConfig(sources=[src], limits=limits)
+        ref = ProjectRef(path=self._selected_path, sources=[self._selected_source])
+        global_config.projects.append(ref)
+
+        save_global_config(global_config)
+        save_project_config(self._selected_path, pc)
+
+        self.dismiss(f"Added project: {self._selected_path.name}")
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        from nightshift.sources import available_sources
+
+        children = list(event.list_view.children)
+        try:
+            idx = children.index(event.item)
+        except ValueError:
+            return
+
+        if self._phase == "repo":
+            if idx < len(self._repos):
+                self._selected_path = self._repos[idx].resolve()
+                self._show_source_picker()
+            elif idx == len(self._repos):
+                # Custom path
+                self._show_custom_path_input()
+
+        elif self._phase == "source":
+            sources = available_sources()
+            if 0 <= idx < len(sources):
+                self._selected_source = sources[idx]
+                if self._selected_source == "yaml":
+                    self._show_confirm()
+                else:
+                    self._show_source_config()
+
+        elif self._phase == "confirm":
+            self._save_project()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if self._phase == "custom_path":
+            raw = event.value.strip()
+            if not raw:
+                return
+            path = Path(raw).expanduser().resolve()
+            if not (path / ".git").is_dir():
+                self.notify(f"Not a git repository: {path}", severity="error", timeout=3)
+                return
+            if str(path) in self._existing_paths:
+                self.notify(f"Already configured: {path.name}", severity="warning", timeout=2)
+                return
+            self._selected_path = path
+            self._show_source_picker()
+
+        elif self._phase == "source_config":
+            # Enter on any config Input → try to proceed to confirm
+            src = self._collect_source_config()
+            if src is not None:
+                self._show_confirm()
+
+    def on_key(self, event: Key) -> None:
+        if event.key == "escape":
+            if self._phase == "confirm":
+                if self._selected_source == "yaml":
+                    self._show_source_picker()
+                else:
+                    self._show_source_config()
+                event.prevent_default()
+            elif self._phase == "source_config":
+                self._show_source_picker()
+                event.prevent_default()
+            elif self._phase == "source":
+                self._rebuild_repo_list()
+                event.prevent_default()
+            elif self._phase == "custom_path":
+                self._rebuild_repo_list()
+                event.prevent_default()
+            else:
+                self.dismiss(None)
+                event.prevent_default()
+
+
 class RunConfirmScreen(ModalScreen[str | None]):
     """Confirmation screen before running tasks. Shows task list and run mode."""
 
@@ -630,6 +1104,7 @@ class NightShiftApp(App):
         Binding("d", "trigger_doctor", "Doctor", show=False),
         Binding("e", "retry_task", "Retry failed", show=False),
         Binding("p", "cycle_priority", "Priority", show=False),
+        Binding("a", "add_project", "Add project", show=False),
     ]
 
     # Task IDs that the TUI has launched but the executor hasn't picked up yet.
@@ -729,17 +1204,23 @@ class NightShiftApp(App):
         # Update panels — pass ALL tasks, panel groups by category
         self.query_one(TaskQueuePanel).update_tasks(all_tasks)
         self.query_one(ProjectListPanel).update_projects(projects, task_counts)
-        self.query_one(RunHistoryPanel).update_runs(runs)
+        history = self.query_one(RunHistoryPanel)
+        history.update_runs(runs)
 
         # Update task detail for currently selected task
         selected_task = self.query_one(TaskQueuePanel).get_selected_task()
         if selected_task:
             self.query_one(TaskDetailPanel).update_task(selected_task)
 
-        # Update detail with latest run if nothing selected
+        # Keep run detail pinned to the selected history row.
         detail = self.query_one(RunDetailPanel)
-        if latest:
+        selected_run = history.get_selected_run()
+        if selected_run:
+            detail.update_run(selected_run)
+        elif latest:
             detail.update_run(latest)
+        else:
+            detail.update_run(None)
 
     def on_list_view_highlighted(self, event) -> None:
         """When cursor moves in any list, update corresponding detail panel."""
@@ -765,6 +1246,14 @@ class NightShiftApp(App):
             self._poll_data()
 
         self.push_screen(AddTaskScreen(), callback=_on_result)
+
+    def action_add_project(self) -> None:
+        def _on_result(result: str | None) -> None:
+            if result:
+                self.notify(result, timeout=3)
+            self._poll_data()
+
+        self.push_screen(AddProjectScreen(), callback=_on_result)
 
     def action_change_model(self) -> None:
         task_queue = self.query_one(TaskQueuePanel)
@@ -880,12 +1369,27 @@ class NightShiftApp(App):
             return
 
         def _on_result(mode: str | None) -> None:
-            # Auto-requeue failed tasks so the runner can pick them up
-            if task.status.value == "failed" and mode in ("live", "dry"):
+            # Requeue non-pending tasks so the runner can pick them up
+            if task.status.value in ("failed", "passed", "done", "skipped") and mode in ("live", "dry"):
                 from nightshift.models.task import TaskStatus
                 from nightshift.storage.task_queue import update_task
 
-                update_task(task.id, status=TaskStatus.PENDING)
+                updates: dict[str, object] = {"status": TaskStatus.PENDING}
+
+                # For builtin tasks, refresh intent/constraints from the latest template
+                if task.source_type == "builtin" and task.source_ref:
+                    from nightshift.tui.task_templates import TEMPLATE_BY_KEY
+
+                    # source_ref format: "builtin:{key}:{project}"
+                    parts = task.source_ref.split(":", 2)
+                    if len(parts) >= 2:
+                        tmpl = TEMPLATE_BY_KEY.get(parts[1])
+                        if tmpl:
+                            updates["intent"] = tmpl.intent
+                            updates["scope"] = list(tmpl.scope)
+                            updates["constraints"] = list(tmpl.constraints)
+
+                update_task(task.id, **updates)
 
             project = Path(task.project_path).name
             if mode == "live":

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from nightshift.executor.claude import ClaudeInvocationResult
 from nightshift.executor.runner import execute_run
 from nightshift.models.config import (
     GlobalConfig,
@@ -44,6 +45,7 @@ async def test_max_prs_limit_stops_execution(tmp_path: Path, monkeypatch) -> Non
     """With max_prs_per_night=1, only the first task should get a PR; the rest are skipped."""
     # Set up local queue with 3 tasks
     monkeypatch.setattr(task_queue, "TASKS_FILE", tmp_path / "tasks.yaml")
+    monkeypatch.setattr(task_queue, "RUN_PID_FILE", tmp_path / "run.pid")
     proj = str(tmp_path)
     for i in range(3):
         task_queue.add_task(_make_queued_task(f"task-{i}", f"Task {i}", proj))
@@ -61,7 +63,10 @@ async def test_max_prs_limit_stops_execution(tmp_path: Path, monkeypatch) -> Non
         patch("nightshift.executor.runner.create_branch", return_value=("nightshift/task-0", False)),
         patch("nightshift.executor.runner.run_baseline_tests", return_value=(True, 5, 0)),
         patch("nightshift.executor.runner.build_prompt", return_value="prompt"),
-        patch("nightshift.executor.runner.invoke_claude", return_value=(True, "ok")),
+        patch(
+            "nightshift.executor.runner.invoke_claude",
+            return_value=ClaudeInvocationResult(success=True, output="ok"),
+        ),
         patch("nightshift.executor.runner.autofix_and_commit", return_value=False),
         patch("nightshift.executor.git_ops.get_diff_stats", return_value=(2, 10, 3)),
         patch("nightshift.executor.runner.run_all_gates", return_value=(True, "All gates passed")),

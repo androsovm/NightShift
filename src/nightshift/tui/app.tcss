@@ -97,18 +97,21 @@ ListView:focus > ListItem.-highlight {
 
 #task-detail-panel {
     height: 1fr;
+    min-height: 10;
 }
 
 /* -- Run detail panel -- */
 
 #run-detail-panel {
-    height: 1fr;
+    height: 2fr;
+    min-height: 14;
 }
 
 /* -- Run history panel -- */
 
 #run-history-panel {
-    height: 1fr;
+    height: 9;
+    min-height: 8;
 }
 
 #run-history-panel ListView {
