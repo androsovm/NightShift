@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class TaskPriority(StrEnum):
@@ -21,6 +21,18 @@ class TaskStatus(StrEnum):
     FAILED = "failed"
     SKIPPED = "skipped"
     DONE = "done"
+
+
+class TaskCategory(StrEnum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    BUILTIN = "builtin"
+
+
+class TaskFrequency(StrEnum):
+    ONCE = "once"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
 
 
 class Task(BaseModel):
@@ -61,6 +73,8 @@ class QueuedTask(BaseModel):
     project_path: str
     priority: TaskPriority = TaskPriority.MEDIUM
     status: TaskStatus = TaskStatus.PENDING
+    category: TaskCategory = TaskCategory.ACTIVE
+    frequency: TaskFrequency | None = None
     intent: str | None = None
     scope: list[str] = Field(default_factory=list)
     constraints: list[str] = Field(default_factory=list)
@@ -69,7 +83,15 @@ class QueuedTask(BaseModel):
     pr_branch: str | None = None
     pr_number: int | None = None
     added_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
+    last_completed_at: datetime | None = None
     attempts: list[TaskAttempt] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _migrate_builtin_category(self) -> "QueuedTask":
+        """Auto-set category=BUILTIN for builtin tasks loaded from old YAML."""
+        if self.source_type == "builtin" and self.category == TaskCategory.ACTIVE:
+            self.category = TaskCategory.BUILTIN
+        return self
 
     @classmethod
     def from_task(cls, task: Task) -> QueuedTask:

@@ -12,6 +12,8 @@ import yaml
 from nightshift.models.task import (
     QueuedTask,
     TaskAttempt,
+    TaskCategory,
+    TaskFrequency,
     TaskPriority,
     TaskStatus,
 )
@@ -133,6 +135,46 @@ def find_by_source_ref(source_type: str, source_ref: str) -> QueuedTask | None:
     return None
 
 
+def deactivate_task(task_id: str) -> QueuedTask | None:
+    """Move a task to the INACTIVE category."""
+    return update_task(task_id, category=TaskCategory.INACTIVE)
+
+
+def activate_task(task_id: str) -> QueuedTask | None:
+    """Move a task back to ACTIVE and reset to PENDING."""
+    return update_task(task_id, category=TaskCategory.ACTIVE, status=TaskStatus.PENDING)
+
+
+def requeue_recurring_builtins() -> int:
+    """Requeue recurring built-in tasks whose interval has elapsed.
+
+    Only requeues PASSED/DONE tasks (not FAILED). Returns count requeued.
+    """
+    from datetime import datetime, timezone
+
+    tasks = load_tasks()
+    now = datetime.now(tz=timezone.utc)
+    requeued = 0
+    for i, t in enumerate(tasks):
+        if t.category != TaskCategory.BUILTIN:
+            continue
+        if t.frequency in (None, TaskFrequency.ONCE):
+            continue
+        if t.status not in (TaskStatus.PASSED, TaskStatus.DONE):
+            continue
+        if t.last_completed_at is None:
+            continue
+        days = (now - t.last_completed_at).days
+        threshold = 7 if t.frequency == TaskFrequency.WEEKLY else 30
+        if days >= threshold:
+            tasks[i] = t.model_copy(update={"status": TaskStatus.PENDING})
+            requeued += 1
+    if requeued:
+        save_tasks(tasks)
+        log.info("task_queue.requeued_recurring", count=requeued)
+    return requeued
+
+
 def write_run_pid() -> None:
     """Write current PID to the run lock file."""
     RUN_PID_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -182,9 +224,16 @@ def recover_stale_running() -> int:
 
 
 def get_pending_tasks(project_path: str | None = None) -> list[QueuedTask]:
-    """Return pending tasks sorted by priority (high first)."""
+    """Return pending tasks sorted by priority (high first).
+
+    Only returns ACTIVE and BUILTIN tasks — INACTIVE are excluded.
+    """
     tasks = load_tasks()
-    pending = [t for t in tasks if t.status == TaskStatus.PENDING]
+    pending = [
+        t for t in tasks
+        if t.status == TaskStatus.PENDING
+        and t.category in (TaskCategory.ACTIVE, TaskCategory.BUILTIN)
+    ]
     if project_path is not None:
         pending = [t for t in pending if t.project_path == project_path]
     pending.sort(key=lambda t: _PRIORITY_ORDER.get(t.priority, 99))
@@ -203,6 +252,8 @@ def record_attempt(task_id: str, attempt: TaskAttempt) -> QueuedTask | None:
         if t.id == task_id:
             t.attempts.append(attempt)
             t.status = attempt.status
+            if attempt.status in (TaskStatus.PASSED, TaskStatus.DONE):
+                t.last_completed_at = attempt.timestamp
             tasks[i] = t
             save_tasks(tasks)
             log.info(

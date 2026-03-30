@@ -8,8 +8,8 @@ from rich.text import Text
 from textual.containers import VerticalScroll
 from textual.widgets import Label, Static
 
-from nightshift.models.task import QueuedTask
-from nightshift.tui.constants import CYAN, GREEN, GREY, PRIORITY_DISPLAY, RED, YELLOW
+from nightshift.models.task import QueuedTask, TaskCategory, TaskFrequency
+from nightshift.tui.constants import CYAN, DIM, GREEN, GREY, PRIORITY_DISPLAY, RED, YELLOW
 
 
 class TaskDetailPanel(VerticalScroll):
@@ -68,11 +68,22 @@ class TaskDetailPanel(VerticalScroll):
             text.append(f" ({task.source_ref})", style=f"{GREY}")
         text.append("\n")
 
+        text.append("Category: ", style=f"bold {GREY}")
+        text.append(f"{task.category.value}\n", style=f"{CYAN}")
+
+        if task.frequency:
+            text.append("Frequency:", style=f"bold {GREY}")
+            text.append(f" {task.frequency.value}\n", style=f"{CYAN}")
+
         text.append("Model:    ", style=f"bold {GREY}")
         text.append(f"{task.model or 'project default'}\n", style=f"{CYAN}")
 
         text.append("Status:   ", style=f"bold {GREY}")
         text.append(f"{task.status.value}\n")
+
+        if task.last_completed_at:
+            text.append("Last done:", style=f"bold {GREY}")
+            text.append(f" {task.last_completed_at.strftime('%Y-%m-%d %H:%M')}\n", style=f"{DIM}")
 
         if task.estimated_minutes:
             text.append("Estimate: ", style=f"bold {GREY}")

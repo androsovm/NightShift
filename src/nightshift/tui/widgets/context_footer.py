@@ -30,7 +30,7 @@ class ContextFooter(Static):
             ("r", "Run task"),
             ("R", "Run all"),
             ("t", "Add"),
-            ("x", "Remove"),
+            ("x", "Toggle/Remove"),
             ("p", "Priority"),
             ("e", "Retry"),
             ("m", "Model"),
