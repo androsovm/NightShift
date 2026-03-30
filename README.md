@@ -16,11 +16,13 @@ nightshift
   NIGHTSHIFT   next run in 5h 12m   4 pending  2 projects   |   last: 3✓ 1✗
 
 ┌─ TASK QUEUE ────────────────┬─ TASK DETAIL ──────────────────────┐
-│ ● [high] Security audit     │ Title:    Security audit           │
-│ ○ [med]  Write missing tests│ Project:  myapp                    │
-│ ○ [med]  Resolve TODOs      │ Priority: ● high                   │
-│ · [low]  Update docs        │ Intent:   Audit the codebase for   │
-│                             │           common security issues...│
+│ ── ACTIVE (2) ──────────── │ Title:    Security audit           │
+│ ● [high] Security audit     │ Project:  myapp                    │
+│ ○ [med]  Resolve TODOs      │ Category: builtin                  │
+│ ── BUILT-IN (1) ────────── │ Frequency:once                     │
+│ · [low]  Update docs weekly │ Priority: ● high                   │
+│ ── INACTIVE (1) ────────── │ Intent:   Audit the codebase for   │
+│ ○ [med]  Write missing tests│           common security issues...│
 ├─ PROJECTS ──────────────────┤─ RUN DETAIL ───────────────────────│
 │ myapp   ~/Projects/myapp    │ Run 20260322  03:00  6m 47s        │
 │ api     ~/Projects/api      │ ✓ Fix imports         2m 10s       │
@@ -31,7 +33,7 @@ nightshift
 │                             │ 20260321  3/21 03:00  4✓ 0✗  8m    │
 │                             │ ▁▃▅▇█▅▃ pass rate                  │
 ├─────────────────────────────┴────────────────────────────────────┤
-│ [q] Quit [t] Add [x] Remove [r] Run [s] Sync [m] Model [?] Help│
+│ [q] Quit [t] Add [x] Toggle/Remove [r] Run [s] Sync [m] Model  │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -86,9 +88,12 @@ Run `nightshift` with no arguments. Everything is a keystroke away:
 | Key | Action |
 |-----|--------|
 | `t` | Add a built-in task (docs, tests, lint, etc.) |
-| `x` | Remove a task |
+| `x` | Toggle active/inactive for source tasks, remove built-in tasks |
 | `m` | Change model for selected task |
-| `r` | Trigger a dry run |
+| `p` | Cycle task priority (low → medium → high) |
+| `r` | Run selected task |
+| `R` | Run all pending tasks |
+| `e` | Retry a failed task |
 | `s` | Sync tasks from sources |
 | `d` | Run doctor health check |
 | `j/k` | Navigate lists |
@@ -96,9 +101,15 @@ Run `nightshift` with no arguments. Everything is a keystroke away:
 | `?` | Help |
 | `q` | Quit |
 
+The task queue is split into three sections:
+
+- **Active** — source-received and manual tasks in the execution queue
+- **Built-in** — template-based tasks with a frequency: once, weekly, or monthly. Recurring tasks auto-requeue after their interval upon successful completion
+- **Inactive** — tasks you've deferred with `[x]`. They won't run until reactivated. Press `[x]` again to move them back to Active
+
 ### Built-in Task Templates (WIP)
 
-Don't want to write tasks from scratch? Press `[t]` in the TUI -- there are templates for the most common maintenance work. Still a work in progress, more templates coming:
+Don't want to write tasks from scratch? Press `[t]` in the TUI -- pick a template, project, model, and frequency (once / weekly / monthly). Still a work in progress, more templates coming:
 
 | Template | What it does |
 |----------|-------------|
@@ -201,7 +212,7 @@ TRELLO_TOKEN=...
 | GitHub Issues | label: `nightshift`, state: open | Closes issue + comment with PR link |
 | YouTrack | tag: `nightshift` | Removes tag + posts comment |
 | Trello | list: "NightShift Queue" | Moves card to "Done" |
-| Built-in | Added via TUI `[t]` | Removed from queue |
+| Built-in | Added via TUI `[t]` with frequency (once/weekly/monthly) | Once: removed. Weekly/monthly: auto-requeued |
 
 ## Safety
 
@@ -278,7 +289,7 @@ For NightShift to run on schedule, the machine must stay awake overnight.
 git clone https://github.com/androsovm/NightShift.git
 cd NightShift
 uv sync --extra dev
-uv run pytest          # 216 tests
+uv run pytest
 ```
 
 ## License

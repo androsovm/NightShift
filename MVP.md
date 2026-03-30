@@ -36,10 +36,23 @@ Global flag: `--verbose / -v` — DEBUG-level logging.
 
 Tasks are stored in `~/.nightshift/tasks.yaml` — a single file for all projects. Atomic writes (temp file + `os.replace`).
 
+Tasks are organized into three categories:
+
+| Category | Description |
+|----------|-------------|
+| **Active** | Source-received and manual tasks in the execution queue |
+| **Built-in** | Template-based tasks with frequency: once, weekly, or monthly. Recurring tasks auto-requeue after their interval upon successful completion (PASSED/DONE only, not FAILED) |
+| **Inactive** | Deferred tasks — won't run until reactivated |
+
+TUI `[x]` key behavior:
+- **Active task** → moves to Inactive (toggle)
+- **Inactive task** → moves back to Active (toggle)
+- **Built-in task** → removes permanently (with confirmation)
+
 Workflow:
 1. `nightshift sync` — import tasks from sources (GitHub, YouTrack, Trello, YAML) into the queue
-2. User manages tasks: sets priorities, removes unwanted ones, adds their own
-3. `nightshift run` — executes pending tasks from the queue, records results (attempt) in task history
+2. User manages tasks: sets priorities, deactivates unwanted ones with `[x]`, adds their own
+3. `nightshift run` — executes pending tasks from the queue (Active + Built-in only, not Inactive), records results (attempt) in task history
 4. User reviews PR and closes the task in the source manually
 
 Each task stores its full attempt history (`TaskAttempt`): timestamp, status, run_id, branch, PR URL, error, duration.
@@ -54,6 +67,7 @@ Sources are only used for importing via `nightshift sync`. After import, tasks l
 | **GitHub Issues** | Issues with a configurable label. Auto-detects repo from git remote | `nightshift` |
 | **YouTrack** | Issues with a configurable tag. Requires `base_url` and `project_id` | `nightshift` |
 | **Trello** | Cards from a configurable list. Requires `board_id` | list "NightShift Queue" |
+| **Built-in** | Added via TUI `[t]` with frequency (once/weekly/monthly) | — |
 
 Extensibility: entry point `nightshift.sources` for third-party adapters + `nightshift.sources.register()` for programmatic registration.
 
