@@ -2,6 +2,23 @@
 
 Screen {
     background: #2E3440;
+    color: #D8DEE9;
+}
+
+ListView {
+    color: #D8DEE9;
+}
+
+ListView > ListItem.-hovered {
+    background: #303744;
+}
+
+ListView > ListItem.-highlight {
+    background: #242933;
+}
+
+ListView:focus > ListItem.-highlight {
+    background: #20252E;
 }
 
 /* -- Header: docked top -- */
@@ -69,10 +86,6 @@ Screen {
     background: #2E3440;
 }
 
-#task-queue-panel ListView > ListItem.--highlight {
-    background: #3B4252;
-}
-
 /* -- Projects panel -- */
 
 #projects-panel {
@@ -102,10 +115,6 @@ Screen {
     height: 1fr;
     scrollbar-size: 1 1;
     background: #2E3440;
-}
-
-#run-history-panel ListView > ListItem.--highlight {
-    background: #3B4252;
 }
 
 /* -- Empty state -- */

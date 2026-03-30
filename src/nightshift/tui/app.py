@@ -148,8 +148,11 @@ class AddTaskScreen(ModalScreen[str | None]):
         max-height: 30;
         background: #2E3440;
     }
-    AddTaskScreen ListView > ListItem.--highlight {
-        background: #3B4252;
+    AddTaskScreen ListView > ListItem.-highlight {
+        background: #242933;
+    }
+    AddTaskScreen ListView:focus > ListItem.-highlight {
+        background: #20252E;
     }
     """
 
@@ -454,8 +457,11 @@ class ModelPickerScreen(ModalScreen[str | None]):
         max-height: 12;
         background: #2E3440;
     }
-    ModelPickerScreen ListView > ListItem.--highlight {
-        background: #3B4252;
+    ModelPickerScreen ListView > ListItem.-highlight {
+        background: #242933;
+    }
+    ModelPickerScreen ListView:focus > ListItem.-highlight {
+        background: #20252E;
     }
     """
 

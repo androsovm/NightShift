@@ -7,6 +7,8 @@ from nightshift.models.task import TaskPriority, TaskStatus
 # Nord Aurora theme palette (consistent with Clorch)
 THEME = {
     "bg": "#2E3440",
+    "selection": "#242933",
+    "selection_focus": "#20252E",
     "green": "#A3BE8C",
     "cyan": "#88C0D0",
     "pink": "#B48EAD",
@@ -29,6 +31,8 @@ GREY = THEME["grey"]
 DIM = THEME["dim"]
 BORDER = THEME["border"]
 ACCENT = THEME["accent"]
+SELECTION = THEME["selection"]
+SELECTION_FOCUS = THEME["selection_focus"]
 
 # Task priority display: symbol, color
 PRIORITY_DISPLAY: dict[TaskPriority, tuple[str, str]] = {

@@ -7,8 +7,8 @@ from pathlib import Path
 from rich.text import Text
 from textual.widgets import Label, ListItem, ListView, Static
 
-from nightshift.models.task import QueuedTask, TaskCategory, TaskFrequency, TaskStatus
-from nightshift.tui.constants import CYAN, DIM, GREEN, GREY, PINK, RED, YELLOW, PRIORITY_DISPLAY
+from nightshift.models.task import QueuedTask, TaskCategory, TaskStatus
+from nightshift.tui.constants import CYAN, GREEN, GREY, PINK, RED, YELLOW, PRIORITY_DISPLAY
 
 # Statuses shown in active/builtin sections
 _VISIBLE_STATUSES = {TaskStatus.PENDING, TaskStatus.RUNNING, TaskStatus.FAILED}
@@ -153,8 +153,8 @@ class TaskQueuePanel(Static):
             text.append(" ✗ ", style=f"{RED}")
             text.append("[failed]", style=f"{RED}")
         elif is_done:
-            text.append(" ✓ ", style=f"{DIM}")
-            text.append(f"[{task.status.value}]", style=f"{DIM}")
+            text.append(" ✓ ", style=f"{GREY}")
+            text.append(f"[{task.status.value}]", style=f"{GREY}")
         else:
             priority_symbol, priority_color = PRIORITY_DISPLAY.get(
                 task.priority, ("·", GREY)
@@ -171,7 +171,7 @@ class TaskQueuePanel(Static):
         elif is_failed:
             title_color = RED
         elif is_done:
-            title_color = DIM
+            title_color = GREY
         else:
             title_color = CYAN
         text.append(task.title[:50], style=f"{title_color}")
@@ -181,6 +181,6 @@ class TaskQueuePanel(Static):
         text.append(project_name, style=f"{PINK}" if not dimmed else f"{GREY}")
 
         if show_frequency and task.frequency:
-            text.append(f"  {task.frequency.value}", style=f"{DIM}")
+            text.append(f"  {task.frequency.value}", style=f"{GREY}")
 
         return text
